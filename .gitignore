@@ -1,0 +1,254 @@
+# ============================================================
+# HAPTIC EV - Production Git Ignore
+# Django + React/Vite
+# ============================================================
+
+
+# ============================================================
+# CLAUDE / AI TOOLS
+# ============================================================
+
+.claude/
+.claude/*
+.claude.json
+
+
+# ============================================================
+# PYTHON
+# ============================================================
+
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+
+# Python cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.hypothesis/
+
+# Coverage
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+
+# Python build/package files
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+
+# ============================================================
+# VIRTUAL ENVIRONMENTS
+# ============================================================
+
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+
+# ============================================================
+# DJANGO
+# ============================================================
+
+*.log
+
+# Local database
+db.sqlite3
+db.sqlite3-journal
+
+# Django static files generated during deployment
+staticfiles/
+
+# Collected static files
+static_root/
+
+# Uploaded user media
+media/
+backend/media/
+
+# Local Django cache
+*.sqlite3
+
+
+# ============================================================
+# ENVIRONMENT VARIABLES / SECRETS
+# ============================================================
+
+.env
+.env.*
+!.env.example
+!.env.template
+
+# Secret/config files
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Credentials
+credentials.json
+secrets.json
+service-account.json
+
+
+# ============================================================
+# NODE / REACT / VITE
+# ============================================================
+
+# Dependencies
+node_modules/
+
+# React/Vite production build
+dist/
+frontend/dist/
+
+# Vite cache
+.vite/
+
+# npm logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Package manager caches
+.npm/
+.yarn/cache/
+.yarn/unplugged/
+.yarn/install-state.gz
+.pnpm-store/
+
+
+# ============================================================
+# FRONTEND ENVIRONMENT FILES
+# ============================================================
+
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+!frontend/.env.template
+
+
+# ============================================================
+# IDE / EDITORS
+# ============================================================
+
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+*~
+.project
+.classpath
+.settings/
+
+
+# ============================================================
+# OPERATING SYSTEM
+# ============================================================
+
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+
+
+# ============================================================
+# TEMPORARY FILES
+# ============================================================
+
+*.tmp
+*.temp
+*.bak
+*.backup
+*.old
+*.orig
+*.rej
+
+
+# ============================================================
+# DEBUG / DEVELOPMENT OUTPUT
+# ============================================================
+
+debug.log
+*.trace
+*.dump
+
+
+# ============================================================
+# TEST / COVERAGE OUTPUT
+# ============================================================
+
+coverage/
+.nyc_output/
+
+
+# ============================================================
+# DOCUMENTATION / LOCAL NOTES
+# ============================================================
+
+*.local
+*.local.*
+notes/
+tmp/
+
+
+# ============================================================
+# OS / FILE MANAGER
+# ============================================================
+
+.fseventsd
+.DocumentRevisions-V100
+.Trashes
+
+
+# ============================================================
+# OPTIONAL: LOCAL AI / MODEL FILES
+# ============================================================
+
+# Large ML/model files should normally be stored outside Git
+*.pt
+*.pth
+*.onnx
+*.h5
+*.pkl
+*.joblib
+*.safetensors
+
+
+# ============================================================
+# OPTIONAL: LARGE DATA FILES
+# ============================================================
+
+*.csv
+*.xlsx
+*.xls
+*.parquet
+*.feather
+
+
+# ============================================================
+# LOCAL UPLOADS / GENERATED FILES
+# ============================================================
+
+uploads/
+tmp/
+temp/
