@@ -1,0 +1,352 @@
+@import 'tailwindcss';
+@import 'leaflet/dist/leaflet.css';
+
+/* ══════════════════════════════════════════════════════════════════════════
+   HapticEV design system — dual theme
+   Editorial layout, oversized uppercase display type, one warm amber accent.
+
+   Both themes are driven by the SAME token names, so every Tailwind utility
+   (bg-ink-950, text-bone, border-line …) flips automatically when
+   <html data-theme> changes. Never hard-code a raw colour in a component.
+   ══════════════════════════════════════════════════════════════════════════ */
+@theme {
+  /* ── Surfaces: 950 is the page, 850 the card, 700+ the raised chrome ── */
+  --color-ink-950: #060607;
+  --color-ink-900: #0b0b0d;
+  --color-ink-850: #101013;
+  --color-ink-800: #151519;
+  --color-ink-700: #1d1d22;
+  --color-ink-600: #2a2a31;
+  --color-ink-500: #3a3a44;
+
+  /* Wash behind feature sections */
+  --color-plum-900: #14101a;
+  --color-plum-800: #1d1626;
+
+  /* Text */
+  --color-bone: #f6f5f2;
+  --color-bone-dim: #a8a6a1;
+
+  /* Neutrals — secondary/muted text, in descending prominence */
+  --color-neutral-200: #e6e4e0;
+  --color-neutral-300: #cbc8c2;
+  --color-neutral-400: #a8a6a1;
+  --color-neutral-500: #85827c;
+  --color-neutral-600: #6b6760;
+  --color-neutral-700: #514e49;
+
+  /* Hairlines & hover fills */
+  --color-line: rgba(255, 255, 255, 0.09);
+  --color-line-2: rgba(255, 255, 255, 0.18);
+  --color-hover: rgba(255, 255, 255, 0.035);
+  --color-hover-2: rgba(255, 255, 255, 0.08);
+
+  /* Amber accent — identical in both themes */
+  --color-amber-200: #ffe2b0;
+  --color-amber-300: #fcc97b;
+  --color-amber-400: #f5ad3f;
+  --color-amber-500: #e5941c;
+  --color-amber-600: #bd7510;
+  --color-amber-700: #8f570b;
+  /* Text/icons placed ON an amber fill — stays dark in both themes */
+  --color-on-accent: #17130a;
+
+  /* Status hues. The -300 step is the "text on surface" step and darkens in
+     the light theme; -400/-500/-600 are fills and stay put. */
+  --color-mint-300: #6ee7b7;
+  --color-mint-400: #34d399;
+  --color-mint-500: #10b981;
+  --color-mint-600: #059669;
+
+  --color-sky-300: #7dd3fc;
+  --color-sky-400: #38bdf8;
+  --color-sky-500: #0ea5e9;
+  --color-sky-600: #0284c7;
+
+  --color-rose-300: #fda4af;
+  --color-rose-400: #fb7185;
+  --color-rose-500: #f43f5e;
+  --color-rose-600: #e11d48;
+
+  --font-display: 'Archivo Variable', 'Archivo', 'Inter Variable', system-ui, sans-serif;
+  --font-sans: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;
+
+  --animate-marquee: marquee 40s linear infinite;
+  --animate-float: float 7s ease-in-out infinite;
+  --animate-halo: halo 3.4s ease-in-out infinite;
+  --animate-shimmer: shimmer 2.2s linear infinite;
+  --animate-ping-slow: ping 2.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   LIGHT THEME
+   Warm paper canvas, white cards, near-black ink. Only the variables change —
+   no component needs a light-mode class.
+   ══════════════════════════════════════════════════════════════════════════ */
+:root[data-theme='light'] {
+  /* Warm paper rather than glaring white: the page is a soft grey-beige and
+     cards are an off-white, so large light areas stay comfortable to read. */
+  --color-ink-950: #eceae4; /* page */
+  --color-ink-900: #f2f1ec; /* bands */
+  --color-ink-850: #fbfaf8; /* cards */
+  --color-ink-800: #fbfaf8;
+  --color-ink-700: #ddd9d0;
+  --color-ink-600: #ccc7bc;
+  --color-ink-500: #b0aa9e;
+
+  /* Near-neutral wash — the plum tint read as noise on paper */
+  --color-plum-900: #eae8e3;
+  --color-plum-800: #e3e0da;
+
+  --color-bone: #14130f; /* primary text + "solid" buttons */
+  --color-bone-dim: #55524b;
+
+  --color-neutral-200: #2a2823;
+  --color-neutral-300: #3b3833;
+  --color-neutral-400: #57534c;
+  --color-neutral-500: #6f6b63;
+  --color-neutral-600: #8b867c;
+  --color-neutral-700: #a8a299;
+
+  --color-line: rgba(20, 19, 15, 0.12);
+  --color-line-2: rgba(20, 19, 15, 0.22);
+  --color-hover: rgba(20, 19, 15, 0.04);
+  --color-hover-2: rgba(20, 19, 15, 0.075);
+
+  /* Status text steps darkened so they stay legible on white */
+  --color-mint-300: #047857;
+  --color-sky-300: #0369a1;
+  --color-rose-300: #be123c;
+  --color-amber-300: #8f570b;
+
+  color-scheme: light;
+}
+
+@keyframes marquee {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-50%, 0, 0); }
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-14px); }
+}
+@keyframes halo {
+  0%, 100% { opacity: 0.35; transform: scale(1); }
+  50% { opacity: 0.85; transform: scale(1.12); }
+}
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+/* ── Base ─────────────────────────────────────────────────────────────── */
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    color-scheme: dark;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    @apply bg-ink-950 text-bone-dim font-sans;
+    min-height: 100vh;
+    transition: background-color 0.4s ease, color 0.4s ease;
+  }
+
+  h1, h2, h3, h4 {
+    @apply font-display text-bone;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
+  ::selection { background: var(--color-amber-400); color: var(--color-on-accent); }
+
+  ::-webkit-scrollbar { width: 11px; height: 11px; }
+  ::-webkit-scrollbar-track { background: var(--color-ink-950); }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-ink-600);
+    border-radius: 99px;
+    border: 3px solid var(--color-ink-950);
+  }
+  ::-webkit-scrollbar-thumb:hover { background: var(--color-ink-500); }
+
+  :focus-visible {
+    outline: 2px solid var(--color-amber-500);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+}
+
+/* Scoped inversion: use on chrome that sits over a dark photo/video while the
+   page itself may be light (the landing nav, media captions). Re-points the
+   same tokens, so every utility inside flips without extra classes. */
+.on-dark {
+  /* Pin the surface scale too: utilities pair them (e.g. the primary button is
+     `bg-bone text-ink-950`), so inverting only the text tokens would leave
+     white-on-white in the light theme. */
+  --color-ink-950: #060607;
+  --color-ink-900: #0b0b0d;
+  --color-ink-850: #101013;
+  --color-ink-800: #151519;
+  --color-ink-700: #1d1d22;
+  --color-ink-600: #2a2a31;
+
+  --color-bone: #ffffff;
+  --color-bone-dim: rgba(255, 255, 255, 0.72);
+  --color-neutral-200: rgba(255, 255, 255, 0.92);
+  --color-neutral-300: rgba(255, 255, 255, 0.82);
+  --color-neutral-400: rgba(255, 255, 255, 0.72);
+  --color-neutral-500: rgba(255, 255, 255, 0.6);
+  --color-neutral-600: rgba(255, 255, 255, 0.5);
+  --color-line: rgba(255, 255, 255, 0.16);
+  --color-line-2: rgba(255, 255, 255, 0.3);
+  --color-hover: rgba(255, 255, 255, 0.08);
+  --color-hover-2: rgba(255, 255, 255, 0.16);
+  --color-amber-300: #fcc97b;
+  --color-mint-300: #6ee7b7;
+  --color-rose-300: #fda4af;
+  --color-sky-300: #7dd3fc;
+}
+
+/* ── Composites ───────────────────────────────────────────────────────── */
+
+/* The standard card surface. In light mode it also picks up a soft shadow,
+   since a hairline alone reads as flat on paper. */
+@utility glass {
+  background: var(--color-ink-850);
+  border: 1px solid var(--color-line);
+  transition: background-color 0.4s ease, border-color 0.3s ease;
+}
+:root[data-theme='light'] .glass {
+  box-shadow: 0 1px 2px rgba(20, 19, 15, 0.03), 0 8px 24px -20px rgba(20, 19, 15, 0.18);
+}
+
+@utility glass-hover {
+  transition: border-color 0.3s ease, background-color 0.3s ease, transform 0.3s ease,
+    box-shadow 0.3s ease;
+}
+
+/* Oversized editorial headline — the signature move. */
+@utility display-xl {
+  font-family: var(--font-display);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: -0.03em;
+  line-height: 0.92;
+  color: var(--color-bone);
+}
+
+@utility eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  /* the -300 step is the theme-aware text step: pale on dark, deep on paper */
+  color: var(--color-amber-300);
+}
+
+/* Ghosted outline type behind the hero wordmark. */
+@utility text-outline {
+  color: transparent;
+  -webkit-text-stroke: 1px color-mix(in srgb, var(--color-bone) 34%, transparent);
+}
+
+@utility text-gradient {
+  background: linear-gradient(
+    100deg,
+    var(--color-bone) 0%,
+    var(--color-amber-500) 55%,
+    var(--color-amber-600) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@utility grid-fade {
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--color-bone) 6%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--color-bone) 6%, transparent) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(ellipse 75% 60% at 50% 0%, #000 35%, transparent 100%);
+}
+
+/* Tinted wash behind feature blocks. */
+@utility bg-wash {
+  background:
+    radial-gradient(70rem 40rem at 50% 0%, color-mix(in srgb, var(--color-plum-800) 85%, transparent), transparent 65%),
+    linear-gradient(180deg, var(--color-plum-900) 0%, var(--color-ink-950) 70%);
+}
+
+@utility edge-fade {
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Leaflet — BRIGHT in both themes.
+   Full-colour OpenStreetMap, no dark filter, so roads, parks and labels stay
+   easy to read for everyone. Only the chrome is restyled.
+   ══════════════════════════════════════════════════════════════════════════ */
+.leaflet-container {
+  background: #eef2f5;
+  font-family: var(--font-sans);
+}
+
+.leaflet-tile-pane {
+  filter: saturate(1.08) contrast(1.04) brightness(1.02);
+}
+
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: #ffffff;
+  color: #18181b;
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.3);
+}
+.leaflet-popup-content-wrapper { border-radius: 16px; padding: 2px; }
+.leaflet-popup-content { margin: 14px 16px; font-size: 13px; }
+.leaflet-popup-close-button { color: #71717a !important; font-size: 20px !important; padding: 8px 8px 0 0 !important; }
+
+.leaflet-control-zoom {
+  border: none !important;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25) !important;
+  border-radius: 12px !important;
+  overflow: hidden;
+}
+.leaflet-control-zoom a {
+  background: #ffffff !important;
+  color: #27272a !important;
+  border-color: #e4e4e7 !important;
+  font-size: 18px !important;
+  font-weight: 600;
+}
+.leaflet-control-zoom a:hover { background: #f4f4f5 !important; }
+
+.leaflet-control-attribution {
+  background: rgba(255, 255, 255, 0.85) !important;
+  color: #52525b !important;
+  font-size: 10px;
+  border-radius: 6px 0 0 0;
+}
+.leaflet-control-attribution a { color: #0284c7 !important; }
+
+/* Marker pins are bare HTML — strip Leaflet's default chrome. */
+.hev-marker { background: transparent; border: none; }
+
+/* Used by the inline marker markup in LiveMap.jsx */
+@keyframes hevDrop {
+  from { transform: translateY(-14px) scale(0.75); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
+@keyframes hevPulse {
+  0% { transform: scale(0.6); opacity: 0.9; }
+  100% { transform: scale(2.1); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
