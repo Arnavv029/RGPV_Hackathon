@@ -60,7 +60,7 @@ def station_list_view(request):
     # Base queryset with rating aggregates for cards, filters, and sorting
     stations = (
         Station.objects.filter(is_active=True)
-        .select_related('owner')
+        .select_related('owner', 'owner__membership')
         .annotate(
             avg_rating=Coalesce(Avg('reviews__rating'), Value(0.0), output_field=FloatField()),
             review_count=Count('reviews', distinct=True),
@@ -88,16 +88,19 @@ def station_list_view(request):
             user_lat = float(user_lat)
             user_lng = float(user_lng)
             stations_list = sort_stations_by_distance(stations, user_lat, user_lng)
+            # Prioritize paid membership stations (is_priority=True) at the top
             if sort_mode == 'rating':
-                stations_list.sort(key=lambda s: (-float(getattr(s, 'avg_rating', 0) or 0), s.distance))
+                stations_list.sort(key=lambda s: (0 if s.is_priority else 1, -float(getattr(s, 'avg_rating', 0) or 0), s.distance))
+            else:
+                stations_list.sort(key=lambda s: (0 if s.is_priority else 1, s.distance))
         except ValueError:
             stations_list = None
 
     if stations_list is None:
         if sort_mode == 'rating':
-            stations_list = list(stations.order_by('-avg_rating', 'name'))
+            stations_list = sorted(stations, key=lambda s: (0 if s.is_priority else 1, -float(getattr(s, 'avg_rating', 0) or 0), s.name))
         else:
-            stations_list = list(stations.order_by('name'))
+            stations_list = sorted(stations, key=lambda s: (0 if s.is_priority else 1, s.name))
 
     serializer = StationSerializer(
         stations_list,
