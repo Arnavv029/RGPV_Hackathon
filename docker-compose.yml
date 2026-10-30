@@ -1,0 +1,29 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: hapticev_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DJANGO_DEBUG=False
+      - DJANGO_SECRET_KEY=ev-booking-production-secret-key-replace-me-12345
+      - DJANGO_ALLOWED_HOSTS=*
+      - ALLOW_SIMULATED_PAYMENTS=True
+      - FRONTEND_URL=http://localhost:5173
+    volumes:
+      - ./backend/db.sqlite3:/app/db.sqlite3
+      - ./backend/media:/app/media
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: hapticev_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend

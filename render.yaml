@@ -1,0 +1,38 @@
+services:
+  # ── Django Backend Web Service ──────────────────────────────────────────────
+  - type: web
+    name: hapticev-backend
+    runtime: python
+    buildCommand: "cd backend && bash build.sh"
+    startCommand: "cd backend && gunicorn ev_backend.wsgi:application --bind 0.0.0.0:$PORT"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.3
+      - key: DJANGO_DEBUG
+        value: "False"
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_ALLOWED_HOSTS
+        value: ".onrender.com,localhost,127.0.0.1"
+      - key: ALLOW_SIMULATED_PAYMENTS
+        value: "True"
+      - key: FRONTEND_URL
+        value: "https://hapticev-frontend.onrender.com"
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+
+  # ── Vite React Frontend Static Site ─────────────────────────────────────────
+  - type: static_site
+    name: hapticev-frontend
+    buildCommand: "npm install && npm run build"
+    staticPublishPath: "dist"
+    rootDir: "frontend"
+    routes:
+      - type: rewrite
+        source: "/*"
+        destination: "/index.html"
+    envVars:
+      - key: VITE_API_BASE
+        value: "https://hapticev-backend.onrender.com/api"

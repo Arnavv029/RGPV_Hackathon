@@ -17,7 +17,7 @@ import { useMemo, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { endpoints } from '@/lib/api';
-import { dateShort, fullName, inr, slotHours, time12 } from '@/lib/format';
+import { dateShort, formatDuration, fullName, inr, slotHours, time12 } from '@/lib/format';
 import { loadRazorpay } from '@/lib/razorpay';
 import { useAuth } from '@/hooks/useAuth';
 import { PENDING_BOOKING_KEY } from './StationDetails';
@@ -68,9 +68,9 @@ export default function Booking() {
 
   if (!pending?.slotId) return <Navigate to="/app" replace />;
 
-  const hours = slotHours(pending.slotStart, pending.slotEnd);
+  const hours = pending.durationHours || slotHours(pending.slotStart, pending.slotEnd);
   const rate = Number(pending.pricePerHour || 0);
-  const total = rate * hours;
+  const total = pending.totalAmount != null ? Number(pending.totalAmount) : rate * hours;
   const busy = stage !== 'idle';
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -89,6 +89,7 @@ export default function Booking() {
         loadRazorpay(),
         endpoints.createRazorpayOrder({
           slot: pending.slotId,
+          duration_hours: hours,
           ...form,
           full_name: form.full_name.trim(),
           amount_paid: total,
@@ -242,7 +243,7 @@ export default function Booking() {
                 {pending.basePrice && Number(pending.basePrice) !== rate && (
                   <Row label="Base rate" value={<span className="line-through">{inr(pending.basePrice)}/hr</span>} muted />
                 )}
-                <Row label="Duration" value={`${hours} hr${hours > 1 ? 's' : ''}`} />
+                <Row label="Duration" value={formatDuration(hours)} />
                 <div className="flex items-baseline justify-between border-t border-dashed border-line pt-4">
                   <span className="font-semibold text-bone">Total</span>
                   <motion.span

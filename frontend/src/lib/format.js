@@ -59,13 +59,37 @@ export const distanceLabel = (km) => {
   return n < 1 ? `${Math.round(n * 1000)} m away` : `${n.toFixed(1)} km away`;
 };
 
-/** Hours between "09:00:00" and "11:00:00", floored at 1. */
+/** Hours between "09:00:00" and "11:00:00", supports 0.5, 1.5, etc. */
 export const slotHours = (start, end) => {
   if (!start || !end) return 1;
   const [sh, sm] = start.split(':').map(Number);
   const [eh, em] = end.split(':').map(Number);
   const mins = eh * 60 + em - (sh * 60 + sm);
-  return Math.max(1, Math.round(mins / 60));
+  if (mins <= 0) return 1;
+  return Math.max(0.5, Math.round((mins / 60) * 10) / 10);
+};
+
+export const formatDuration = (hours) => {
+  const h = Number(hours || 1);
+  if (h === 0.5) return '30 mins';
+  if (h === 1) return '1 hour';
+  if (h === 1.5) return '1 hr 30 mins';
+  if (h === 2) return '2 hours';
+  if (h === 2.5) return '2 hrs 30 mins';
+  if (h === 3) return '3 hours';
+  const fullHours = Math.floor(h);
+  const mins = Math.round((h - fullHours) * 60);
+  if (mins === 0) return `${fullHours} hrs`;
+  return `${fullHours} hr ${mins} mins`;
+};
+
+export const addHoursToTime = (timeStr, hours) => {
+  if (!timeStr) return '—';
+  const [h, m] = timeStr.split(':').map(Number);
+  const totalMins = h * 60 + (m || 0) + Math.round(Number(hours) * 60);
+  const newH = Math.floor(totalMins / 60) % 24;
+  const newM = totalMins % 60;
+  return `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}:00`;
 };
 
 export const initials = (user) => {

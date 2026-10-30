@@ -17,7 +17,16 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { endpoints } from '@/lib/api';
 import { openDirections } from '@/lib/maps';
-import { addDays, dateShort, dateTimeLong, inr, time12, toISODate } from '@/lib/format';
+import {
+  addDays,
+  addHoursToTime,
+  dateShort,
+  dateTimeLong,
+  formatDuration,
+  inr,
+  time12,
+  toISODate,
+} from '@/lib/format';
 import { useAsync } from '@/hooks/useAsync';
 import { AvailabilityPill, RatingStars, stationImage } from '@/components/station/StationCard';
 import LiveMap from '@/components/map/LiveMap';
@@ -27,11 +36,21 @@ import { EmptyState, ErrorState, Skeleton, Spinner } from '@/components/ui/Feedb
 
 export const PENDING_BOOKING_KEY = 'hev_booking_pending';
 
+const DURATION_OPTIONS = [
+  { value: 0.5, label: '30 min', sub: '0.5 hr' },
+  { value: 1.0, label: '1 hour', sub: 'Standard' },
+  { value: 1.5, label: '1.5 hrs', sub: '1h 30m' },
+  { value: 2.0, label: '2 hours', sub: '2.0 hrs' },
+  { value: 2.5, label: '2.5 hrs', sub: '2h 30m' },
+  { value: 3.0, label: '3 hours', sub: '3.0 hrs' },
+];
+
 export default function StationDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [date, setDate] = useState(toISODate());
   const [selected, setSelected] = useState(null);
+  const [duration, setDuration] = useState(1.0);
 
   const station = useAsync(() => endpoints.station(id), [id]);
   const reviews = useAsync(() => endpoints.stationReviews(id, { limit: 20 }), [id]);
@@ -48,19 +67,51 @@ export default function StationDetails() {
   const selectedSlot = slotList.find((x) => x.id === selected);
   const rate = selectedSlot?.dynamic_price?.hourly_rate ?? s.price_per_hour;
 
+  const targetEndTime = useMemo(() => {
+    if (!selectedSlot) return null;
+    return addHoursToTime(selectedSlot.start_time, duration);
+  }, [selectedSlot, duration]);
+
+  const totalAmount = useMemo(() => {
+    return Number(rate || 0) * duration;
+  }, [rate, duration]);
+
+  const isDurationAllowed = (d) => {
+    if (!selectedSlot) return true;
+    if (d <= 1.0) return true;
+    const [sh, sm] = selectedSlot.start_time.split(':').map(Number);
+    const endTotalMins = sh * 60 + (sm || 0) + Math.round(d * 60);
+    const [origH, origM] = selectedSlot.end_time.split(':').map(Number);
+    const origEndMins = origH * 60 + (origM || 0);
+
+    const hasConflict = slotList.some((s) => {
+      if (s.id === selectedSlot.id) return false;
+      const [h, m] = s.start_time.split(':').map(Number);
+      const slotStartMins = h * 60 + (m || 0);
+      if (slotStartMins >= origEndMins && slotStartMins < endTotalMins) {
+        return s.is_full || !s.is_available;
+      }
+      return false;
+    });
+    return !hasConflict;
+  };
+
   const proceed = () => {
     if (!selectedSlot) return;
+    const computedEnd = addHoursToTime(selectedSlot.start_time, duration);
     sessionStorage.setItem(
       PENDING_BOOKING_KEY,
       JSON.stringify({
         slotId: selectedSlot.id,
+        durationHours: duration,
         stationId: s.id,
         stationName: s.name,
         stationLocation: s.location_text,
         slotDate: selectedSlot.date,
         slotStart: selectedSlot.start_time,
-        slotEnd: selectedSlot.end_time,
+        slotEnd: computedEnd,
         pricePerHour: rate,
+        totalAmount: totalAmount,
         basePrice: selectedSlot.dynamic_price?.base_rate ?? s.price_per_hour,
         priceExplanation: selectedSlot.dynamic_price?.explanation || '',
         imageUrl: stationImage(s),
@@ -220,6 +271,83 @@ export default function StationDetails() {
                 })}
               </motion.div>
             )}
+
+            {selectedSlot && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                transition={{ duration: 0.3 }}
+                className="mt-6 border-t border-line/70 pt-6"
+              >
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h3 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-amber-300">
+                      <Clock className="size-4" /> How much time do you need?
+                    </h3>
+                    <p className="text-xs text-neutral-400">
+                      Lock your custom charging interval starting from {time12(selectedSlot.start_time)}
+                    </p>
+                  </div>
+                  <span className="text-xs font-semibold text-amber-300">
+                    Live Rate: {inr(rate)}/hr
+                  </span>
+                </div>
+
+                <div className="mt-4 grid grid-cols-3 gap-2.5 sm:grid-cols-6">
+                  {DURATION_OPTIONS.map((opt) => {
+                    const active = duration === opt.value;
+                    const allowed = isDurationAllowed(opt.value);
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        disabled={!allowed}
+                        onClick={() => setDuration(opt.value)}
+                        className={`group relative flex flex-col items-center justify-center rounded-xl border p-2.5 text-center transition-all ${
+                          !allowed
+                            ? 'cursor-not-allowed border-line/40 opacity-30'
+                            : active
+                              ? 'border-amber-400 bg-amber-400/20 text-bone shadow-[0_0_12px_rgba(245,158,11,0.2)]'
+                              : 'border-line bg-surface/40 text-neutral-300 hover:border-amber-400/40 hover:bg-hover'
+                        }`}
+                      >
+                        <span className="text-xs font-bold">{opt.label}</span>
+                        <span className="mt-0.5 text-[10px] text-neutral-400 group-hover:text-neutral-300">
+                          {opt.sub}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-4 flex flex-col gap-2 rounded-xl border border-amber-400/20 bg-amber-500/[0.05] p-3 text-xs sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-start gap-2.5">
+                    <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-amber-400/20 text-amber-300 text-xs">
+                      ⚡
+                    </span>
+                    <div>
+                      <div className="font-semibold text-bone">
+                        Locked Interval: {time12(selectedSlot.start_time)} – {time12(targetEndTime)} ({formatDuration(duration)})
+                      </div>
+                      {duration === 1.5 && (
+                        <p className="mt-0.5 text-[11px] text-neutral-400">
+                          The subsequent remainder window ({time12(targetEndTime)} – {time12(addHoursToTime(selectedSlot.start_time, 2.0))}) will automatically open for other users.
+                        </p>
+                      )}
+                      {duration === 0.5 && (
+                        <p className="mt-0.5 text-[11px] text-neutral-400">
+                          The remaining 30-min window ({time12(targetEndTime)} – {time12(selectedSlot.end_time)}) will stay open for other drivers.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-right sm:shrink-0">
+                    <span className="text-[10px] uppercase tracking-wider text-neutral-400">Est. Total: </span>
+                    <span className="font-display text-base font-bold text-amber-300">{inr(totalAmount)}</span>
+                  </div>
+                </div>
+              </motion.div>
+            )}
           </Card>
 
           {/* About */}
@@ -279,30 +407,45 @@ export default function StationDetails() {
               <AnimatePresence mode="wait">
                 {selectedSlot ? (
                   <motion.div key="sel" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-                    <p className="text-xs font-semibold uppercase tracking-wider text-amber-300">Selected slot</p>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-amber-300">Selected Reservation</p>
                     <p className="mt-2 text-lg font-semibold text-bone">
-                      {dateShort(selectedSlot.date)} · {time12(selectedSlot.start_time)} – {time12(selectedSlot.end_time)}
+                      {dateShort(selectedSlot.date)}
                     </p>
+                    <p className="mt-0.5 text-sm font-semibold text-amber-300">
+                      {time12(selectedSlot.start_time)} – {time12(targetEndTime)} ({formatDuration(duration)})
+                    </p>
+
+                    <div className="mt-4 space-y-2 rounded-xl border border-line bg-surface/50 p-3 text-xs">
+                      <div className="flex justify-between text-neutral-400">
+                        <span>Hourly Live Rate</span>
+                        <span className="font-medium text-bone">{inr(rate)}/hr</span>
+                      </div>
+                      <div className="flex justify-between text-neutral-400">
+                        <span>Charging Duration</span>
+                        <span className="font-medium text-bone">{formatDuration(duration)}</span>
+                      </div>
+                      <div className="flex justify-between border-t border-line/60 pt-2 font-semibold text-bone">
+                        <span>Total Payable</span>
+                        <span className="font-display text-lg text-amber-300">{inr(totalAmount)}</span>
+                      </div>
+                    </div>
+
                     {selectedSlot.dynamic_price?.explanation && (
                       <div className="mt-4 flex gap-2.5 rounded-xl border border-sky-500/25 bg-sky-500/10 p-3 text-xs leading-relaxed text-neutral-300">
                         <BrainCircuit className="mt-0.5 size-4 shrink-0 text-sky-300" />
                         {selectedSlot.dynamic_price.explanation}
                       </div>
                     )}
-                    <div className="mt-4 flex items-baseline justify-between">
-                      <span className="text-sm text-neutral-400">Live rate</span>
-                      <span className="font-display text-2xl font-semibold text-amber-300">{inr(rate)}/hr</span>
-                    </div>
                   </motion.div>
                 ) : (
                   <motion.p key="none" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-sm text-neutral-400">
-                    Pick a time slot to see its live price and continue to checkout.
+                    Pick a time slot and choose how much time you need to continue to checkout.
                   </motion.p>
                 )}
               </AnimatePresence>
 
               <Button block size="lg" className="mt-6" disabled={!selectedSlot} onClick={proceed}>
-                Continue to checkout <ArrowRight className="size-4" />
+                {selectedSlot ? `Continue to checkout · ${inr(totalAmount)}` : 'Continue to checkout'} <ArrowRight className="size-4" />
               </Button>
               <p className="mt-3 text-center text-[11px] text-neutral-500">Free cancellation up to 30 min before your slot</p>
             </div>

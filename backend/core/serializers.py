@@ -121,6 +121,9 @@ class StationSerializer(serializers.ModelSerializer):
     avg_rating = serializers.SerializerMethodField()
     review_count = serializers.SerializerMethodField()
 
+    # Priority station flag (True if station owner has active paid membership)
+    is_priority = serializers.SerializerMethodField()
+
     class Meta:
         model = Station
         fields = [
@@ -128,7 +131,7 @@ class StationSerializer(serializers.ModelSerializer):
             'latitude', 'longitude', 'phone',
             'total_slots', 'available_slots', 'charger_type', 'power_kw', 'price_per_hour', 'is_active',
             'owner', 'owner_name', 'distance', 'image', 'image_url',
-            'avg_rating', 'review_count',
+            'avg_rating', 'review_count', 'is_priority',
             'created_at'
         ]
         extra_kwargs = {
@@ -181,6 +184,15 @@ class StationSerializer(serializers.ModelSerializer):
         if c is not None:
             return int(c)
         return obj.reviews.count()
+
+    def get_is_priority(self, obj):
+        p = getattr(obj, 'is_priority', None)
+        if p is not None:
+            return bool(p)
+        try:
+            return bool(obj.owner.membership.is_priority and obj.owner.membership.bookings_remaining > 0)
+        except Exception:
+            return False
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -350,6 +362,7 @@ class BookingDetailSerializer(serializers.ModelSerializer):
             'payment_status', 'transaction_id',
             'refund_amount', 'refund_percentage',
             'cancelled_at',
+            'commission_rate', 'commission_amount', 'owner_earnings',
             'station', 'slot',
             'status', 'qr_code',
             'has_review', 'can_review',
@@ -505,5 +518,49 @@ class EmergencyRequestSerializer(serializers.ModelSerializer):
         self.Meta.fields = [
             'id', 'user', 'user_name', 'mechanic', 'mechanic_name', 'mechanic_phone', 'phone', 'vehicle_number',
             'message', 'latitude', 'longitude', 'status', 'created_at'
+        ]
+        super().__init__(*args, **kwargs)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# OWNER MEMBERSHIP SERIALIZERS
+# ══════════════════════════════════════════════════════════════════════════════
+
+class OwnerMembershipSerializer(serializers.ModelSerializer):
+    plan_display = serializers.CharField(source='get_plan_display', read_only=True)
+    autopay_plan_display = serializers.CharField(source='get_autopay_plan_display', read_only=True)
+    effective_commission_rate = serializers.SerializerMethodField()
+
+    class Meta:
+        model = None
+
+    def __init__(self, *args, **kwargs):
+        from core.models import OwnerMembership
+        self.Meta.model = OwnerMembership
+        self.Meta.fields = [
+            'id', 'plan', 'plan_display',
+            'total_bookings_credited', 'bookings_remaining', 'bookings_used',
+            'is_autopay_enabled', 'autopay_plan', 'autopay_plan_display',
+            'is_priority', 'effective_commission_rate',
+            'last_renewed_at', 'created_at', 'updated_at'
+        ]
+        super().__init__(*args, **kwargs)
+
+    def get_effective_commission_rate(self, obj):
+        # If bookings_remaining > 0: 0% commission. If 0: 5% commission.
+        return 0.0 if obj.bookings_remaining > 0 else 5.0
+
+
+class MembershipOrderSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = None
+
+    def __init__(self, *args, **kwargs):
+        from core.models import MembershipOrder
+        self.Meta.model = MembershipOrder
+        self.Meta.fields = [
+            'id', 'plan', 'plan_name', 'amount', 'bookings_credited',
+            'razorpay_order_id', 'razorpay_payment_id', 'is_autopay',
+            'status', 'created_at'
         ]
         super().__init__(*args, **kwargs)

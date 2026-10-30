@@ -37,7 +37,10 @@ from core.models import Booking, TimeSlot, Review
 from core.serializers import BookingCreateSerializer, BookingDetailSerializer
 from core.utils.qr_generator import generate_qr_code
 from core.utils.booking_email import queue_booking_email
-from core.utils.booking_rules import contact_errors, slot_price, slot_unbookable_reason, start_refund
+from core.utils.booking_rules import (
+    contact_errors, slot_price, slot_unbookable_reason, start_refund,
+    validate_slot_duration, lock_or_split_slot
+)
 from core.utils.payment_processor import calculate_refund_percentage, refund_reason
 
 logger = logging.getLogger(__name__)
@@ -131,9 +134,13 @@ def create_booking_view(request):
     if errors:
         return Response(errors, status=status.HTTP_400_BAD_REQUEST)
 
-    payment_method = vd.get('payment_method')
+    duration_hours = float(request.data.get('duration_hours') or 1.0)
+    valid_dur, dur_err = validate_slot_duration(vd['slot'], duration_hours)
+    if not valid_dur:
+        return Response({'error': dur_err}, status=status.HTTP_400_BAD_REQUEST)
+
     # Never trust a client-sent amount.
-    amount = float(slot_price(vd['slot'])[2])
+    amount = float(slot_price(vd['slot'], duration_hours=duration_hours)[2])
 
     # ── Step 1: Validate payment proof ────────────────────────────────────
     if payment_method == 'upi':
@@ -168,6 +175,8 @@ def create_booking_view(request):
             if reason:
                 return Response({'error': reason}, status=status.HTTP_409_CONFLICT)
 
+            slot = lock_or_split_slot(slot, duration_hours)
+
             booking = Booking.objects.create(
                 user           = request.user,
                 station        = slot.station,
@@ -184,12 +193,14 @@ def create_booking_view(request):
                 status         = 'pending',
             )
 
-            slot.booked_count += 1
-            slot.save()
-
             # QR generated ONLY after payment is confirmed
             booking.qr_code = generate_qr_code(booking)
             booking.save()
+            
+            # Apply station owner's membership quota & 5% commission if free tier
+            from core.utils.membership_rules import apply_owner_membership_to_booking
+            apply_owner_membership_to_booking(booking)
+
             queue_booking_email(booking, 'created')
 
     except Exception:

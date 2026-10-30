@@ -30,7 +30,10 @@ from core.utils.razorpay_client import (
 )
 from core.utils.qr_generator import generate_qr_code
 from core.utils.booking_email import queue_booking_email
-from core.utils.booking_rules import contact_errors, slot_price, slot_unbookable_reason
+from core.utils.booking_rules import (
+    contact_errors, slot_price, slot_unbookable_reason,
+    validate_slot_duration, lock_or_split_slot
+)
 
 logger = logging.getLogger(__name__)
 
@@ -69,8 +72,13 @@ def razorpay_create_order_view(request):
     if errors:
         return Response(errors, status=status.HTTP_400_BAD_REQUEST)
 
+    duration_hours = float(data.get('duration_hours') or 1.0)
+    valid_dur, dur_err = validate_slot_duration(slot, duration_hours)
+    if not valid_dur:
+        return Response({'error': dur_err}, status=status.HTTP_400_BAD_REQUEST)
+
     # 2. Price is always computed here, never taken from the client
-    dynamic_price, hrs, amount, explanation = slot_price(slot)
+    dynamic_price, hrs, amount, explanation = slot_price(slot, duration_hours=duration_hours)
     amount_paise = max(int(amount * 100), MINIMUM_AMOUNT_PAISE)
     amount_rupees = float(Decimal(amount_paise) / 100)
     pricing_info = {'explanation': explanation}
@@ -99,6 +107,7 @@ def razorpay_create_order_view(request):
         status='created',
         payload_json={
             'slot':           slot_id,
+            'duration_hours': duration_hours,
             'full_name':      data.get('full_name', '').strip(),
             'phone':          data.get('phone', '').strip(),
             'email':          data.get('email', '').strip(),
@@ -193,6 +202,9 @@ def razorpay_verify_view(request):
                     msg = 'Sorry, this slot was just taken. Contact support with your payment ID for a refund.'
                 return Response({'error': msg, 'payment_id': payment_id}, status=status.HTTP_409_CONFLICT)
 
+            duration_hours = float(payload.get('duration_hours') or 1.0)
+            slot = lock_or_split_slot(slot, duration_hours)
+
             booking = Booking.objects.create(
                 user=request.user,
                 station=slot.station,
@@ -216,8 +228,9 @@ def razorpay_verify_view(request):
             except Exception as e:
                 logger.warning("QR generation failed for booking %s: %s", booking.booking_id, e)
 
-            slot.booked_count += 1
-            slot.save(update_fields=['booked_count'])
+            # Apply station owner's membership quota & 5% commission if free tier
+            from core.utils.membership_rules import apply_owner_membership_to_booking
+            apply_owner_membership_to_booking(booking)
 
             attempt.status = 'paid'
             attempt.razorpay_payment_id = payment_id
@@ -301,6 +314,11 @@ def razorpay_webhook_view(request):
                     except Exception: pass
                     slot.booked_count += 1
                     slot.save(update_fields=['booked_count'])
+
+                    # Apply station owner's membership quota & 5% commission if free tier
+                    from core.utils.membership_rules import apply_owner_membership_to_booking
+                    apply_owner_membership_to_booking(booking)
+
                     attempt.status = 'paid'
                     attempt.razorpay_payment_id = payment_id
                     attempt.booking = booking

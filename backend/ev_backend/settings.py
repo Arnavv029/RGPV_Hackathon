@@ -40,12 +40,25 @@ if not SECRET_KEY:
         raise RuntimeError('DJANGO_SECRET_KEY must be set when DJANGO_DEBUG=False.')
     SECRET_KEY = 'ev-booking-secret-key-change-this-in-production-abc123xyz'  # dev only
 
-ALLOWED_HOSTS = _env_list('DJANGO_ALLOWED_HOSTS', '*' if DEBUG else '')
-if not DEBUG and not ALLOWED_HOSTS:
-    raise RuntimeError('DJANGO_ALLOWED_HOSTS must be set when DJANGO_DEBUG=False.')
+DEFAULT_ALLOWED_HOSTS = '*' if DEBUG else '.onrender.com,.railway.app,.herokuapp.com,localhost,127.0.0.1'
+ALLOWED_HOSTS = _env_list('DJANGO_ALLOWED_HOSTS', DEFAULT_ALLOWED_HOSTS)
 
-# Public URL of the React app — used for links inside emails.
+# Public URL of the React app — used for links inside emails and CORS.
 FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
+
+DEFAULT_CSRF_ORIGINS = [
+    'https://*.onrender.com',
+    'https://*.railway.app',
+    'https://*.vercel.app',
+    'https://*.netlify.app',
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'http://127.0.0.1:5173',
+    'http://127.0.0.1:3000',
+]
+CSRF_TRUSTED_ORIGINS = _env_list('DJANGO_CSRF_TRUSTED_ORIGINS', ','.join(DEFAULT_CSRF_ORIGINS))
+if FRONTEND_URL and FRONTEND_URL not in CSRF_TRUSTED_ORIGINS:
+    CSRF_TRUSTED_ORIGINS.append(FRONTEND_URL)
 
 if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
@@ -54,9 +67,9 @@ if not DEBUG:
     CSRF_COOKIE_SECURE = True
     SECURE_HSTS_SECONDS = 60 * 60 * 24 * 30
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
     X_FRAME_OPTIONS = 'DENY'
-    CSRF_TRUSTED_ORIGINS = _env_list('DJANGO_CSRF_TRUSTED_ORIGINS', FRONTEND_URL)
 
 # ─── Installed Apps ───────────────────────────────────────────────────────────
 # We add:
@@ -86,6 +99,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',     # ← CORS must be first
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware', # ← WhiteNoise serves static files directly in prod
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -115,14 +129,21 @@ TEMPLATES = [
 WSGI_APPLICATION = 'ev_backend.wsgi.application'
 
 # ─── Database ─────────────────────────────────────────────────────────────────
-# Using SQLite — Django's built-in database.
-# The file 'db.sqlite3' will be created automatically in the backend/ folder.
+# Using SQLite by default; if DATABASE_URL is set (e.g. Render/Railway Postgres), use it.
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
+
+DATABASE_URL = os.environ.get('DATABASE_URL')
+if DATABASE_URL:
+    try:
+        import dj_database_url
+        DATABASES['default'] = dj_database_url.parse(DATABASE_URL, conn_max_age=600)
+    except Exception:
+        pass
 
 # ─── Custom User Model ────────────────────────────────────────────────────────
 # We tell Django to use OUR custom user model (defined in core/models.py)
@@ -148,6 +169,15 @@ STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'  # `manage.py collectstatic` target for deployment
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'  # Uploaded images saved here
+
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 

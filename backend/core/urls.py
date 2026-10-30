@@ -30,8 +30,11 @@ POST    /api/owner/verify-qr/              Owners
 """
 
 from django.urls import path
-from core.views import auth_views, station_views, booking_views, owner_views, review_views, emergency_views, payment_views
-from core.views import mechanic_views
+from core.views import (
+    auth_views, station_views, booking_views, owner_views,
+    review_views, emergency_views, payment_views, mechanic_views,
+    membership_views
+)
 
 urlpatterns = [
 
@@ -65,6 +68,13 @@ urlpatterns = [
     path('owner/bookings/<int:pk>/',                owner_views.owner_booking_detail_view,        name='owner-booking-detail'),
     path('owner/bookings/<int:pk>/status/',         owner_views.owner_update_booking_status_view, name='owner-booking-status'),
     path('owner/verify-qr/',                        owner_views.owner_verify_qr_view,            name='owner-verify-qr'),
+
+    # ── OWNER MEMBERSHIP & AUTOPAY ───────────────────────────────────────────
+    path('owner/membership/',                            membership_views.owner_membership_detail_view,             name='owner-membership'),
+    path('owner/membership/autopay/',                    membership_views.owner_membership_toggle_autopay_view,      name='owner-membership-autopay'),
+    path('owner/membership/razorpay/create-order/',       membership_views.owner_membership_create_order_view,       name='owner-membership-create-order'),
+    path('owner/membership/razorpay/verify/',             membership_views.owner_membership_verify_view,             name='owner-membership-verify'),
+    path('owner/membership/simulate-purchase/',           membership_views.owner_membership_simulate_purchase_view,  name='owner-membership-simulate'),
 
     # ── EMERGENCY ENDPOINTS ───────────────────────────────────────────────────
     path('emergency/mechanics/',  emergency_views.emergency_mechanics_view,  name='emergency-mechanics'),

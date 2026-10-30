@@ -139,6 +139,17 @@ class Station(models.Model):
     def __str__(self):
         return f"{self.name} — {self.location_text}"
 
+    @property
+    def is_priority(self):
+        """Returns True if station owner has an active paid membership with remaining bookings."""
+        try:
+            membership = getattr(self.owner, 'membership', None)
+            if membership:
+                return bool(membership.is_priority and membership.bookings_remaining > 0)
+        except Exception:
+            pass
+        return False
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 3. TIME SLOT MODEL
@@ -315,6 +326,13 @@ class Booking(models.Model):
     refund_amount     = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     refund_percentage = models.IntegerField(null=True, blank=True)   # 100 / 70 / 50 / 0
     cancelled_at      = models.DateTimeField(null=True, blank=True)
+
+    # ── Commission & Owner Earnings ───────────────────────────────────────────
+    # If owner has active booking quota: commission_rate = 0.00
+    # If owner is on Free Tier with 0 quota: commission_rate = 5.00%
+    commission_rate   = models.DecimalField(max_digits=5, decimal_places=2, default=0.00, help_text="Platform commission rate (%)")
+    commission_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, help_text="Commission amount in INR")
+    owner_earnings    = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="Net payout to owner in INR")
 
     # ── QR Code ───────────────────────────────────────────────────────────────
     # Stored as base64 encoded PNG image string.
@@ -572,3 +590,93 @@ class EmailVerification(models.Model):
     def is_expired(self):
         from django.utils import timezone
         return timezone.now() > self.expires_at
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 8. STATION OWNER MEMBERSHIP & AUTOPAY
+# ══════════════════════════════════════════════════════════════════════════════
+class OwnerMembership(models.Model):
+    """
+    Tracks a Station Owner's membership tier, remaining booking quota, and autopay status.
+
+    Plans:
+      - 'free':      20 bookings free upon registration. Once quota reaches 0:
+                     5% platform commission charged per booking; station NOT prioritized.
+      - 'plan_999':  ₹999 / 50 bookings  (0% commission, Priority search listing)
+      - 'plan_1299': ₹1299 / 75 bookings (0% commission, Priority search listing)
+      - 'plan_1499': ₹1499 / 100 bookings(0% commission, Premier Priority search listing)
+
+    Autopay:
+      - If is_autopay_enabled is True, when bookings_remaining hits 0, the system
+        automatically renews autopay_plan with zero downtime.
+    """
+
+    PLAN_CHOICES = [
+        ('free',      'Free Tier (20 Free Bookings / 5% Commission)'),
+        ('plan_999',  'Starter Plan (₹999 / 50 Bookings)'),
+        ('plan_1299', 'Growth Plan (₹1299 / 75 Bookings)'),
+        ('plan_1499', 'Enterprise Plan (₹1499 / 100 Bookings)'),
+    ]
+
+    user = models.OneToOneField(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name='membership',
+        limit_choices_to={'role': 'owner'},
+    )
+    plan = models.CharField(max_length=20, choices=PLAN_CHOICES, default='free')
+    total_bookings_credited = models.PositiveIntegerField(default=20)
+    bookings_remaining = models.PositiveIntegerField(default=20)
+    bookings_used = models.PositiveIntegerField(default=0)
+
+    # Autopay settings
+    is_autopay_enabled = models.BooleanField(default=False)
+    autopay_plan = models.CharField(max_length=20, choices=PLAN_CHOICES, default='plan_999')
+
+    # Status flags
+    is_priority = models.BooleanField(default=False)
+    last_renewed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+        verbose_name = 'Owner Membership'
+
+    def __str__(self):
+        return f"{self.user.username} | {self.plan} | {self.bookings_remaining} left"
+
+    def is_paid_active(self):
+        """Returns True if owner has an active paid plan with remaining quota."""
+        return self.plan != 'free' and self.bookings_remaining > 0
+
+    def refresh_priority(self):
+        self.is_priority = self.is_paid_active()
+
+
+class MembershipOrder(models.Model):
+    """
+    Audit log of all membership purchases and autopay renewals via Razorpay.
+    """
+    STATUS_CHOICES = [
+        ('created', 'Created'),
+        ('paid',    'Paid'),
+        ('failed',  'Failed'),
+    ]
+
+    owner               = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='membership_orders')
+    plan                = models.CharField(max_length=20)
+    plan_name           = models.CharField(max_length=100)
+    amount              = models.DecimalField(max_digits=10, decimal_places=2)
+    bookings_credited   = models.PositiveIntegerField()
+    razorpay_order_id   = models.CharField(max_length=100, unique=True)
+    razorpay_payment_id = models.CharField(max_length=100, blank=True, null=True)
+    is_autopay          = models.BooleanField(default=False)
+    status              = models.CharField(max_length=20, choices=STATUS_CHOICES, default='created')
+    created_at          = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.owner.username} | {self.plan_name} | ₹{self.amount} | {self.status}"

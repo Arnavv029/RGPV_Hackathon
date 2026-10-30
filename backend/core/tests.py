@@ -156,3 +156,92 @@ class OwnerMembershipTests(TestCase):
         self.assertEqual(mem.bookings_remaining, 50)
         self.assertEqual(mem.plan, 'plan_999')
         self.assertTrue(mem.is_priority)
+
+
+class DynamicSlotDurationLockTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.owner = User.objects.create_user(username='stationowner2', password='password123', role='owner')
+        from core.models import Station, TimeSlot
+        import datetime
+        self.station = Station.objects.create(
+            owner=self.owner,
+            name='Beta Station',
+            location_text='Bhopal MP',
+            latitude=23.25,
+            longitude=77.41,
+            price_per_hour=50.0,
+            is_active=True,
+        )
+        self.slot_date = datetime.date.today() + datetime.timedelta(days=2)
+        # Create 3 base 1-hour slots: 10-11, 11-12, 12-13
+        self.slot1 = TimeSlot.objects.create(
+            station=self.station, date=self.slot_date,
+            start_time=datetime.time(10, 0), end_time=datetime.time(11, 0),
+            capacity=1, booked_count=0, is_available=True
+        )
+        self.slot2 = TimeSlot.objects.create(
+            station=self.station, date=self.slot_date,
+            start_time=datetime.time(11, 0), end_time=datetime.time(12, 0),
+            capacity=1, booked_count=0, is_available=True
+        )
+        self.slot3 = TimeSlot.objects.create(
+            station=self.station, date=self.slot_date,
+            start_time=datetime.time(12, 0), end_time=datetime.time(13, 0),
+            capacity=1, booked_count=0, is_available=True
+        )
+
+    def test_duration_lock_and_interval_split_1_5_hours(self):
+        """
+        User books 1.5h starting at 10:00:
+        - slot1 (10-11) is locked for 10:00 - 11:30 and marked booked.
+        - slot2 (11-12) start_time is shifted to 11:30, remaining open until 12:00.
+        - slot3 (12-13) remains untouched.
+        """
+        import datetime
+        from core.utils.booking_rules import lock_or_split_slot, validate_slot_duration
+        from core.models import TimeSlot
+
+        valid, err = validate_slot_duration(self.slot1, 1.5)
+        self.assertTrue(valid)
+        self.assertIsNone(err)
+
+        locked_slot = lock_or_split_slot(self.slot1, 1.5)
+        self.assertEqual(locked_slot.start_time, datetime.time(10, 0))
+        self.assertEqual(locked_slot.end_time, datetime.time(11, 30))
+        self.assertEqual(locked_slot.booked_count, 1)
+
+        # Check slot2: shifted to 11:30 - 12:00 and still available (booked_count = 0)
+        self.slot2.refresh_from_db()
+        self.assertEqual(self.slot2.start_time, datetime.time(11, 30))
+        self.assertEqual(self.slot2.end_time, datetime.time(12, 0))
+        self.assertEqual(self.slot2.booked_count, 0)
+        self.assertTrue(self.slot2.is_available)
+
+        # Check slot3: 12:00 - 13:00 untouched
+        self.slot3.refresh_from_db()
+        self.assertEqual(self.slot3.start_time, datetime.time(12, 0))
+        self.assertEqual(self.slot3.end_time, datetime.time(13, 0))
+
+    def test_duration_lock_shorter_duration_creates_remainder_slot(self):
+        """
+        User books 30 min (0.5h) on a 1-hour slot (12:00 - 13:00):
+        - slot3 is locked for 12:00 - 12:30 and marked booked.
+        - A new slot 12:30 - 13:00 is created with booked_count = 0.
+        """
+        import datetime
+        from core.utils.booking_rules import lock_or_split_slot
+        from core.models import TimeSlot
+
+        locked_slot = lock_or_split_slot(self.slot3, 0.5)
+        self.assertEqual(locked_slot.start_time, datetime.time(12, 0))
+        self.assertEqual(locked_slot.end_time, datetime.time(12, 30))
+        self.assertEqual(locked_slot.booked_count, 1)
+
+        remainder_slot = TimeSlot.objects.filter(
+            station=self.station, date=self.slot_date,
+            start_time=datetime.time(12, 30), end_time=datetime.time(13, 0)
+        ).first()
+        self.assertIsNotNone(remainder_slot)
+        self.assertEqual(remainder_slot.booked_count, 0)
+        self.assertTrue(remainder_slot.is_available)
