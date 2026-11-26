@@ -112,13 +112,20 @@ export default function StationDetails() {
     }
   }, [routeContext]);
 
-  // Set default initial start time to next rounded hour today or 10:00 AM
+  // Set default initial start time respecting operating hours (08:00 - 22:00)
   useEffect(() => {
     const now = new Date();
     const todayStr = toISODate(now);
     if (date === todayStr) {
-      let nextH = now.getHours() + 1;
-      if (nextH > 22) nextH = 22;
+      const h = now.getHours();
+      let nextH;
+      if (h < 8) {
+        nextH = 8;
+      } else if (h >= 21) {
+        nextH = 8;
+      } else {
+        nextH = h + 1;
+      }
       const hStr = String(nextH).padStart(2, '0');
       setStartTime(`${hStr}:00`);
     } else {
@@ -607,14 +614,21 @@ export default function StationDetails() {
 
               {/* Start Time Picker */}
               <div className="sm:col-span-2">
-                <label className="text-xs font-semibold uppercase tracking-wider text-neutral-300">
-                  Reservation Start Time *
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-neutral-300">
+                    Reservation Start Time *
+                  </label>
+                  <span className="text-[11px] font-semibold text-emerald-400">
+                    ⚡ Operating Hours: 08:00 AM – 10:00 PM
+                  </span>
+                </div>
                 <div className="mt-1.5 flex flex-wrap items-center gap-3">
                   <div className="flex items-center gap-2 rounded-xl border border-line bg-surface/50 px-3 py-2">
                     <Clock className="size-4 text-amber-300" />
                     <input
                       type="time"
+                      min={date === toISODate() ? (new Date().getHours() < 8 ? '08:00' : `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`) : '08:00'}
+                      max="21:30"
                       value={startTime}
                       onChange={(e) => {
                         setStartTime(e.target.value);
@@ -634,6 +648,14 @@ export default function StationDetails() {
             {estimateError && (
               <div className="mt-4 flex items-center gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-300">
                 <AlertCircle className="size-4 shrink-0" /> {estimateError}
+              </div>
+            )}
+
+            {/* Past / Operating Hours Conflict Alert */}
+            {estimate && !estimate.is_available && (
+              <div className="mt-4 flex items-center gap-2 rounded-xl border border-rose-500/30 bg-rose-500/15 p-3.5 text-xs text-rose-300">
+                <AlertCircle className="size-4 shrink-0 text-rose-400" />
+                <span><b>Time Slot Unavailable:</b> {estimate.conflict_reason}</span>
               </div>
             )}
 

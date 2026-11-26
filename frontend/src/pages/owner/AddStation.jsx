@@ -88,7 +88,7 @@ export default function AddStation() {
       } else {
         await endpoints.createStation(payload, false);
       }
-      toast.success('Station published! Now add some time slots.');
+      toast.success('Station published successfully! Your station is live for bookings.');
       navigate('/owner/slots');
     } catch (err) {
       setError(err.message);

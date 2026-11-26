@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import {
+  Calendar,
   CalendarClock,
   Compass,
   Crown,
@@ -37,7 +38,7 @@ const LINKS = {
     { to: '/owner', label: 'Dashboard', icon: LayoutDashboard, end: true },
     { to: '/owner/membership', label: 'Membership', icon: Crown },
     { to: '/owner/requests', label: 'Requests', icon: Inbox },
-    { to: '/owner/slots', label: 'Slots', icon: SlidersHorizontal },
+    { to: '/owner/slots', label: 'Live Schedule', icon: Calendar },
     { to: '/owner/scanner', label: 'Scan QR', icon: ScanLine },
     { to: '/owner/stations/new', label: 'Add station', icon: PlusCircle },
   ],

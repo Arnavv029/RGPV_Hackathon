@@ -1,6 +1,17 @@
 import { motion } from 'framer-motion';
-import { CalendarPlus, Clock, IndianRupee, Lock, LockOpen, Plus, Save, Trash2, Wand2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import {
+  BatteryCharging,
+  Calendar,
+  CheckCircle2,
+  Clock,
+  IndianRupee,
+  QrCode,
+  RefreshCw,
+  Save,
+  ShieldCheck,
+  Zap,
+} from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { endpoints } from '@/lib/api';
@@ -9,21 +20,9 @@ import { useAsync } from '@/hooks/useAsync';
 import PageHeader from '@/components/ui/PageHeader';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
+import Badge from '@/components/ui/Badge';
 import { Field, Input, Select } from '@/components/ui/Field';
-import { EmptyState, ErrorState, Skeleton, Spinner } from '@/components/ui/Feedback';
-
-const pad = (n) => String(n).padStart(2, '0');
-
-/** Hourly ranges between two "HH:MM" times, e.g. 09:00–12:00 -> 3 ranges. */
-function hourlyRanges(from, to, stepHours) {
-  const [fh] = from.split(':').map(Number);
-  const [th] = to.split(':').map(Number);
-  const out = [];
-  for (let h = fh; h + stepHours <= th; h += stepHours) {
-    out.push({ start_time: `${pad(h)}:00`, end_time: `${pad(h + stepHours)}:00` });
-  }
-  return out;
-}
+import { EmptyState, ErrorState, Spinner } from '@/components/ui/Feedback';
 
 export default function ManageSlots() {
   const [params, setParams] = useSearchParams();
@@ -36,44 +35,11 @@ export default function ManageSlots() {
   const [price, setPrice] = useState('');
   const [savingPrice, setSavingPrice] = useState(false);
 
-  // Generator
-  const [from, setFrom] = useState('08:00');
-  const [to, setTo] = useState('20:00');
-  const [step, setStep] = useState(1);
-  const [capacity, setCapacity] = useState(1);
-  const [creating, setCreating] = useState(false);
-  const [custom, setCustom] = useState([]);
-
-  const slots = useAsync(() => (stationId ? endpoints.ownerSlots(stationId, date) : Promise.resolve(null)), [stationId, date]);
-  const slotList = slots.data?.slots || [];
-  const [busySlot, setBusySlot] = useState(null);
-
-  const toggleSlot = async (s) => {
-    setBusySlot(s.id);
-    try {
-      await endpoints.updateSlot(s.id, { is_available: !s.is_available });
-      toast.success(s.is_available ? 'Slot closed to new bookings' : 'Slot reopened');
-      slots.reload();
-    } catch (err) {
-      toast.error(err.message);
-    } finally {
-      setBusySlot(null);
-    }
-  };
-
-  const removeSlot = async (s) => {
-    if (!window.confirm(`Delete the ${time12(s.start_time)} – ${time12(s.end_time)} slot?`)) return;
-    setBusySlot(s.id);
-    try {
-      await endpoints.deleteSlot(s.id);
-      toast.success('Slot deleted');
-      slots.reload();
-    } catch (err) {
-      toast.error(err.message);
-    } finally {
-      setBusySlot(null);
-    }
-  };
+  // Fetch real-time schedule: booked intervals and available gaps
+  const schedule = useAsync(
+    () => (stationId ? endpoints.stationSchedule(stationId, date) : Promise.resolve(null)),
+    [stationId, date],
+  );
 
   useEffect(() => {
     if (station) setPrice(station.price_per_hour ?? '');
@@ -83,8 +49,9 @@ export default function ManageSlots() {
     setSavingPrice(true);
     try {
       await endpoints.updateStation(station.id, { price_per_hour: price === '' ? null : Number(price) });
-      toast.success('Base price updated');
+      toast.success('Base tariff updated successfully!');
       stations.reload();
+      schedule.reload();
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -92,41 +59,59 @@ export default function ManageSlots() {
     }
   };
 
-  const preview = [...hourlyRanges(from, to, Number(step)), ...custom];
-  const existing = new Set(slotList.map((s) => `${s.start_time.slice(0, 5)}-${s.end_time.slice(0, 5)}`));
-  const toCreate = preview.filter((r) => !existing.has(`${r.start_time}-${r.end_time}`));
+  const bookedIntervals = schedule.data?.booked_intervals || [];
+  const availableGaps = schedule.data?.available_gaps || [];
+  const totalSlots = station?.total_slots || schedule.data?.total_slots || 4;
 
-  const create = async () => {
-    if (!toCreate.length) return toast('All of these slots already exist for this date.');
-    setCreating(true);
-    try {
-      const res = await endpoints.createSlots({ station: Number(stationId), date, capacity: Number(capacity) || 1, time_ranges: toCreate });
-      toast.success(res.message || 'Slots created');
-      if (res.errors?.length) {
-        const first = Object.values(res.errors[0] || {}).flat()[0];
-        toast.warning(`${res.errors.length} slot(s) skipped${first ? `: ${first}` : ''}`);
-      }
-      setCustom([]);
-      slots.reload();
-    } catch (err) {
-      toast.error(err.message);
-    } finally {
-      setCreating(false);
-    }
-  };
+  // Calculate current occupancy right now (if today)
+  const isToday = date === toISODate();
+  const now = new Date();
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+  const activeSessions = useMemo(() => {
+    if (!isToday) return [];
+    return bookedIntervals.filter((item) => {
+      const [sh, sm] = item.start_time.split(':').map(Number);
+      const [eh, em] = item.end_time.split(':').map(Number);
+      const sMin = sh * 60 + sm;
+      const eMin = eh * 60 + em;
+      return currentMinutes >= sMin && currentMinutes < eMin;
+    });
+  }, [bookedIntervals, isToday, currentMinutes]);
 
   if (stations.loading) return <Spinner />;
   if (stations.error) return <ErrorState error={stations.error} onRetry={stations.reload} />;
-  if (!list.length)
+  if (!list.length) {
     return (
-      <EmptyState icon={CalendarPlus} title="Add a station first" description="Slots belong to a station. Create one to get started." action={<Button to="/owner/stations/new">Add station</Button>} />
+      <EmptyState
+        icon={BatteryCharging}
+        title="Add a station first"
+        description="Schedule and bay availability belong to a station. Create one to get started."
+        action={<Button to="/owner/stations/new">Add station</Button>}
+      />
     );
+  }
 
   return (
-    <div>
-      <PageHeader eyebrow="Availability" title="Slots & pricing" description="Open bookable time slots and set your base rate (₹/unit). AI pricing adjusts each slot's price around it." />
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Station Management"
+        title="Live Schedule & Bay Occupancy"
+        description="Real-time bay occupancy, booked charging intervals, and open availability gaps. Slots are allocated automatically based on vehicle charging duration."
+        actions={
+          <div className="flex gap-2">
+            <Button to="/owner/scanner" variant="primary" size="md">
+              <QrCode className="size-4" /> Scan QR to Start Charging
+            </Button>
+            <Button variant="secondary" size="md" onClick={() => schedule.reload()} loading={schedule.loading}>
+              <RefreshCw className="size-4" /> Refresh
+            </Button>
+          </div>
+        }
+      />
 
-      <div className="mb-6 grid gap-4 md:grid-cols-[1.2fr_1fr_1fr]">
+      {/* ── Top Bar Controls: Station, Date, Operating Hours & Price ── */}
+      <div className="grid gap-4 md:grid-cols-[1.2fr_1fr_1fr_1.2fr]">
         <Field label="Station">
           <Select value={stationId} onChange={(e) => setParams({ station: e.target.value })}>
             {list.map((s) => (
@@ -136,175 +121,218 @@ export default function ManageSlots() {
             ))}
           </Select>
         </Field>
-        <Field label="Date">
-          <Input type="date" value={date} min={toISODate()} onChange={(e) => setDate(e.target.value)} />
+
+        <Field label="Schedule Date">
+          <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         </Field>
-        <Field label="Base price (₹/unit)" icon={IndianRupee}>
+
+        <Field label="Station Tariff (₹/unit)" icon={IndianRupee}>
           <div className="flex gap-2">
-            <Input withIcon type="number" min="0" value={price} onChange={(e) => setPrice(e.target.value)} />
-            <Button type="button" variant="secondary" onClick={savePrice} loading={savingPrice} disabled={String(price) === String(station?.price_per_hour ?? '')}>
+            <Input
+              withIcon
+              type="number"
+              min="0"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              placeholder="20.00"
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={savePrice}
+              loading={savingPrice}
+              disabled={String(price) === String(station?.price_per_hour ?? '')}
+            >
               <Save className="size-4" />
             </Button>
           </div>
         </Field>
+
+        <div className="flex flex-col justify-end">
+          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-2.5 text-xs text-emerald-300">
+            <div className="font-semibold uppercase tracking-wider text-[10px] text-emerald-400">Operating Hours</div>
+            <div className="mt-0.5 font-bold">08:00 AM – 10:00 PM (Daily)</div>
+          </div>
+        </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
-        {/* Generator */}
-        <Card className="p-6">
-          <h2 className="mb-5 flex items-center gap-2 text-lg uppercase">
-            <Wand2 className="size-5 text-amber-300" /> Slot generator
-          </h2>
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Opens at">
-              <Input type="time" step="3600" value={from} onChange={(e) => setFrom(e.target.value)} />
-            </Field>
-            <Field label="Closes at">
-              <Input type="time" step="3600" value={to} onChange={(e) => setTo(e.target.value)} />
-            </Field>
-            <Field label="Slot length">
-              <Select value={step} onChange={(e) => setStep(e.target.value)}>
-                <option value={1}>1 hour</option>
-                <option value={2}>2 hours</option>
-                <option value={3}>3 hours</option>
-              </Select>
-            </Field>
-            <Field label="Cars per slot">
-              <Input type="number" min="1" value={capacity} onChange={(e) => setCapacity(e.target.value)} />
-            </Field>
-          </div>
-
-          <CustomRange onAdd={(r) => setCustom((c) => [...c, r])} />
-
-          <div className="mt-5 flex max-h-44 flex-wrap gap-1.5 overflow-y-auto">
-            {preview.map((r, i) => {
-              const dup = existing.has(`${r.start_time}-${r.end_time}`);
-              const isCustom = i >= preview.length - custom.length;
-              return (
-                <span
-                  key={`${r.start_time}-${r.end_time}-${i}`}
-                  className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs ${
-                    dup ? 'border-line text-neutral-600 line-through' : 'border-amber-400/25 bg-amber-500/5 text-amber-200'
-                  }`}
-                >
-                  {r.start_time}–{r.end_time}
-                  {isCustom && (
-                    <button type="button" onClick={() => setCustom((c) => c.filter((x) => x !== r))} aria-label="Remove">
-                      <Trash2 className="size-3" />
-                    </button>
-                  )}
-                </span>
-              );
-            })}
-          </div>
-
-          <Button block className="mt-5" onClick={create} loading={creating} disabled={!toCreate.length}>
-            <CalendarPlus className="size-4" /> Create {toCreate.length} slot{toCreate.length === 1 ? '' : 's'}
-          </Button>
-        </Card>
-
-        {/* Existing */}
-        <Card className="p-6">
-          <h2 className="mb-5 flex items-center gap-2 text-lg uppercase">
-            <Clock className="size-5 text-sky-300" /> Slots on {new Date(`${date}T00:00`).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })}
-          </h2>
-          {slots.loading ? (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="h-20" />
-              ))}
+      <div className="grid gap-6 lg:grid-cols-[1.1fr_1.4fr]">
+        {/* ── Left Column: Real-time Bays Status & Quick Actions ── */}
+        <div className="space-y-6">
+          <Card className="p-6">
+            <div className="flex items-center justify-between border-b border-line pb-4">
+              <div>
+                <h2 className="flex items-center gap-2 text-lg uppercase font-bold text-bone">
+                  <Zap className="size-5 text-amber-300" /> Station Bays Status
+                </h2>
+                <p className="mt-0.5 text-xs text-neutral-400">
+                  {station?.name} · {totalSlots} Physical Charging Bays
+                </p>
+              </div>
+              <span className="rounded-full border border-line bg-surface/60 px-3 py-1 text-xs font-semibold text-neutral-300">
+                {activeSessions.length} / {totalSlots} In Use
+              </span>
             </div>
-          ) : slots.error ? (
-            <ErrorState error={slots.error} onRetry={slots.reload} />
-          ) : slotList.length === 0 ? (
-            <p className="py-12 text-center text-sm text-neutral-500">No slots on this date yet. Use the generator to add some.</p>
-          ) : (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {slotList.map((s, i) => {
-                const pct = Math.round((s.booked_count / Math.max(1, s.capacity)) * 100);
-                const busy = busySlot === s.id;
+
+            <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {Array.from({ length: totalSlots }, (_, i) => {
+                const bayNumber = i + 1;
+                const active = activeSessions[i];
                 return (
                   <motion.div
-                    key={s.id}
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1, transition: { delay: i * 0.02 } }}
-                    className={`rounded-xl border border-line bg-hover p-3 ${s.is_available ? '' : 'opacity-60'}`}
+                    key={bayNumber}
+                    initial={{ opacity: 0, scale: 0.96 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className={`rounded-2xl border p-4 transition-colors ${
+                      active
+                        ? 'border-amber-400/40 bg-amber-500/10'
+                        : 'border-emerald-500/30 bg-emerald-500/5 hover:border-emerald-500/50'
+                    }`}
                   >
-                    <div className="flex items-start justify-between gap-1">
-                      <p className="text-sm font-semibold text-bone">
-                        {time12(s.start_time)} – {time12(s.end_time)}
-                      </p>
-                      <div className="flex shrink-0 gap-1 text-neutral-400">
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => toggleSlot(s)}
-                          className="rounded p-0.5 hover:text-bone disabled:opacity-40"
-                          aria-label={s.is_available ? 'Close slot' : 'Reopen slot'}
-                          title={s.is_available ? 'Close to new bookings' : 'Reopen for bookings'}
-                        >
-                          {s.is_available ? <LockOpen className="size-3.5" /> : <Lock className="size-3.5 text-rose-400" />}
-                        </button>
-                        {s.booked_count === 0 && (
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => removeSlot(s)}
-                            className="rounded p-0.5 hover:text-rose-400 disabled:opacity-40"
-                            aria-label="Delete slot"
-                            title="Delete slot"
-                          >
-                            <Trash2 className="size-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    {!s.is_available && <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-rose-400">Closed</p>}
-                    <div className="mt-2 h-1 overflow-hidden rounded-full bg-hover">
-                      <div className={`h-full rounded-full ${s.is_full ? 'bg-rose-500' : 'bg-amber-500'}`} style={{ width: `${pct}%` }} />
-                    </div>
-                    <div className="mt-1.5 flex justify-between text-[11px] text-neutral-500">
-                      <span>
-                        {s.booked_count}/{s.capacity} booked
+                    <div className="flex items-start justify-between">
+                      <span className="font-display text-base font-bold text-bone">
+                        Bay #{bayNumber}
                       </span>
-                      {s.dynamic_price?.hourly_rate != null && <span className="text-neutral-300">{inr(s.dynamic_price.hourly_rate)}/unit</span>}
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                          active
+                            ? 'bg-amber-400/20 text-amber-300 border border-amber-400/30'
+                            : 'bg-emerald-400/20 text-emerald-300 border border-emerald-400/30'
+                        }`}
+                      >
+                        <span className={`size-1.5 rounded-full ${active ? 'bg-amber-300 animate-pulse' : 'bg-emerald-400'}`} />
+                        {active ? 'Charging' : 'Available'}
+                      </span>
+                    </div>
+
+                    <div className="mt-3 text-xs space-y-1">
+                      {active ? (
+                        <>
+                          <div className="font-semibold text-bone">{active.vehicle_number || 'Vehicle Charging'}</div>
+                          <div className="text-amber-200">
+                            {time12(active.start_time)} – {time12(active.end_time)}
+                          </div>
+                          <div className="text-[11px] text-neutral-400">
+                            Session actively running
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="text-neutral-300 font-medium">Ready for next vehicle</div>
+                          <div className="text-[11px] text-neutral-500">
+                            {station?.charger_type || 'DC CCS2 Fast Charger'}
+                          </div>
+                        </>
+                      )}
                     </div>
                   </motion.div>
                 );
               })}
             </div>
-          )}
-        </Card>
-      </div>
-    </div>
-  );
-}
 
-function CustomRange({ onAdd }) {
-  const [start, setStart] = useState('');
-  const [end, setEnd] = useState('');
-  const valid = start && end && start < end;
-  return (
-    <div className="mt-4 flex items-end gap-2">
-      <Field label="Custom slot" className="flex-1">
-        <Input type="time" value={start} onChange={(e) => setStart(e.target.value)} />
-      </Field>
-      <Field className="flex-1">
-        <Input type="time" value={end} onChange={(e) => setEnd(e.target.value)} />
-      </Field>
-      <Button
-        type="button"
-        variant="secondary"
-        disabled={!valid}
-        onClick={() => {
-          onAdd({ start_time: start, end_time: end });
-          setStart('');
-          setEnd('');
-        }}
-        aria-label="Add custom slot"
-      >
-        <Plus className="size-4" />
-      </Button>
+            {/* Explanatory note */}
+            <div className="mt-5 rounded-xl border border-line bg-surface/50 p-3.5 text-xs text-neutral-400 space-y-1.5">
+              <div className="font-semibold text-neutral-300 flex items-center gap-1.5">
+                <CheckCircle2 className="size-4 text-emerald-400" /> Real-time Early Bay Release
+              </div>
+              <p className="text-[11px] leading-relaxed">
+                When a user completes charging or leaves early, scan their QR or click <b>"Complete & Free Bay"</b> in the Scanner. The bay is instantly released so other drivers can reserve it immediately.
+              </p>
+            </div>
+          </Card>
+        </div>
+
+        {/* ── Right Column: Booked Intervals & Open Gaps Timeline ── */}
+        <div className="space-y-6">
+          <Card className="p-6">
+            <div className="flex items-center justify-between border-b border-line pb-4">
+              <div>
+                <h2 className="flex items-center gap-2 text-lg uppercase font-bold text-bone">
+                  <Clock className="size-5 text-sky-300" /> Schedule on{' '}
+                  {new Date(`${date}T00:00`).toLocaleDateString('en-IN', {
+                    weekday: 'short',
+                    day: 'numeric',
+                    month: 'short',
+                  })}
+                </h2>
+                <p className="mt-0.5 text-xs text-neutral-400">
+                  {bookedIntervals.length} Booked Session{bookedIntervals.length === 1 ? '' : 's'} · {availableGaps.length} Open Gap{availableGaps.length === 1 ? '' : 's'}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 space-y-6">
+              {/* Booked Intervals List */}
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-3 flex items-center gap-1.5">
+                  <BatteryCharging className="size-4 text-amber-300" /> Booked Time Intervals
+                </div>
+                {bookedIntervals.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-line p-6 text-center text-xs text-neutral-500">
+                    No bookings on this date yet. All bays are 100% open between 08:00 AM and 10:00 PM!
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {bookedIntervals.map((b, i) => (
+                      <div
+                        key={i}
+                        className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-surface/60 p-3 text-xs"
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="grid size-8 place-items-center rounded-lg bg-amber-500/10 text-amber-400 font-bold">
+                            #{i + 1}
+                          </span>
+                          <div>
+                            <div className="font-semibold text-bone">
+                              {time12(b.start_time)} – {time12(b.end_time)}
+                            </div>
+                            <div className="text-neutral-400 text-[11px]">
+                              {b.vehicle_number ? `Vehicle: ${b.vehicle_number}` : 'Reserved Vehicle'}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <Badge status={b.status || 'confirmed'} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Open Available Gaps */}
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-3 flex items-center gap-1.5">
+                  <Clock className="size-4 text-emerald-400" /> Open Available Gaps (Free for Booking)
+                </div>
+                {availableGaps.length === 0 ? (
+                  <p className="text-xs text-neutral-500">Station is fully reserved for operating hours.</p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {availableGaps.map((g, i) => (
+                      <div
+                        key={i}
+                        className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3 text-xs flex items-center justify-between"
+                      >
+                        <div>
+                          <div className="font-bold text-emerald-300">
+                            {time12(g.start_time)} – {time12(g.end_time)}
+                          </div>
+                          <div className="text-[11px] text-neutral-400 mt-0.5">{g.label || `${g.duration_minutes}m free`}</div>
+                        </div>
+                        <span className="rounded-full bg-emerald-400/20 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
+                          Free
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </Card>
+        </div>
+      </div>
     </div>
   );
 }

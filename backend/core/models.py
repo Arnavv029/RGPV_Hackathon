@@ -260,10 +260,14 @@ class Booking(models.Model):
     STATUS_CHOICES = [
         ('pending',   'Pending'),
         ('confirmed', 'Confirmed'),
+        ('charging',  'Charging in Progress'),
         ('rejected',  'Rejected'),
         ('completed', 'Completed'),
         ('cancelled', 'Cancelled'),
     ]
+
+    session_started_at   = models.DateTimeField(null=True, blank=True, help_text="Timestamp when owner scanned QR and started charging")
+    session_completed_at = models.DateTimeField(null=True, blank=True, help_text="Timestamp when charging finished and bay was freed")
 
     # UUID: looks like "550e8400-e29b-41d4-a716-446655440000"
     # This is the unique identifier encoded in the QR code
@@ -373,6 +377,7 @@ class Booking(models.Model):
     commission_rate   = models.DecimalField(max_digits=5, decimal_places=2, default=0.00, help_text="Platform commission rate (%)")
     commission_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, help_text="Commission amount in INR")
     owner_earnings    = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="Net payout to owner in INR")
+    quota_deducted    = models.BooleanField(default=False, help_text="True if 1 booking credit was deducted from owner membership")
 
     # ── QR Code ───────────────────────────────────────────────────────────────
     # Stored as base64 encoded PNG image string.

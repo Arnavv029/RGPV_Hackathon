@@ -448,11 +448,26 @@ def owner_update_booking_status_view(request, pk):
             TimeSlot.objects.filter(pk=booking.slot_id, booked_count__gt=0).update(
                 booked_count=F('booked_count') - 1
             )
+        elif new_status == 'charging':
+            booking.session_started_at = timezone.now()
+            booking.save(update_fields=['session_started_at'])
         elif new_status == 'completed':
+            booking.session_completed_at = timezone.now()
             booking.remaining_paid = True
-            booking.save(update_fields=['remaining_paid'])
+            # Real-time Bay Release: if driver unplugs/leaves early, release remaining interval
+            now_time = timezone.localtime().time()
+            today_date = timezone.localdate()
+            if booking.booking_date == today_date and booking.start_time and booking.end_time:
+                if now_time < booking.end_time and now_time >= booking.start_time:
+                    booking.end_time = now_time
+            booking.save(update_fields=['session_completed_at', 'remaining_paid', 'end_time'])
+
+            # Deduct 1 credit from station owner's membership
+            from core.utils.membership_rules import deduct_membership_quota_on_completion
+            deduct_membership_quota_on_completion(booking)
+
         serializer.save()
-        if new_status in ('confirmed', 'rejected'):
+        if new_status in ('confirmed', 'rejected', 'charging', 'completed'):
             queue_booking_email(booking, new_status)
 
     return Response({

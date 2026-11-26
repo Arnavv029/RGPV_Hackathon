@@ -112,6 +112,7 @@ export const fullName = (user) =>
 export const STATUS_TONE = {
   pending: 'text-amber-300 bg-amber-400/10 border-amber-400/30',
   confirmed: 'text-mint-300 bg-mint-500/10 border-mint-500/30',
+  charging: 'text-emerald-300 bg-emerald-500/15 border-emerald-400/40',
   completed: 'text-sky-300 bg-sky-500/10 border-sky-500/30',
   rejected: 'text-rose-300 bg-rose-500/10 border-rose-500/30',
   cancelled: 'text-neutral-400 bg-hover border-line',

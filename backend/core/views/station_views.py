@@ -269,6 +269,8 @@ def station_slots_view(request, pk):
                 'booking_id': x.get('booking_id'),
                 'start_time': x['start_time'],
                 'end_time': x['end_time'],
+                'status': x.get('status', 'booked'),
+                'vehicle_number': x.get('vehicle_number', ''),
                 'label': x['label'],
             } for x in booked_intervals
         ],
@@ -317,6 +319,8 @@ def station_schedule_view(request, pk):
                 'booking_id': x.get('booking_id'),
                 'start_time': x['start_time'],
                 'end_time': x['end_time'],
+                'status': x.get('status', 'booked'),
+                'vehicle_number': x.get('vehicle_number', ''),
                 'label': x['label'],
             } for x in booked_intervals
         ],

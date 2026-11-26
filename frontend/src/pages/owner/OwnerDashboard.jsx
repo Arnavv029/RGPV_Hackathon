@@ -288,7 +288,7 @@ export default function OwnerDashboard() {
                     <span className="font-semibold text-bone">{s.price_per_hour ? `${inr(s.price_per_hour)}/unit` : 'Free'}</span>
                   </div>
                   <Button size="sm" variant="secondary" block className="mt-4" to={`/owner/slots?station=${s.id}`}>
-                    Manage slots & price
+                    Live schedule & tariff
                   </Button>
                 </div>
               </Card>

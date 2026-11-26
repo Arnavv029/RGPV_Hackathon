@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { Car, Check, CheckCheck, Inbox, Mail, Phone, RefreshCw, Search, X } from 'lucide-react';
+import { Car, Check, CheckCheck, Inbox, Mail, Phone, RefreshCw, Search, X, Zap } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { endpoints } from '@/lib/api';
@@ -10,19 +10,21 @@ import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
 import { EmptyState, ErrorState, Skeleton } from '@/components/ui/Feedback';
 
-const FILTERS = ['pending', 'confirmed', 'completed', 'rejected', 'cancelled', 'all'];
+const FILTERS = ['pending', 'confirmed', 'charging', 'completed', 'rejected', 'cancelled', 'all'];
 
 /** Allowed owner transitions, mirroring BookingStatusUpdateSerializer. */
 export function nextActions(status) {
   if (status === 'pending') return ['confirmed', 'rejected'];
-  if (status === 'confirmed') return ['completed'];
+  if (status === 'confirmed') return ['charging', 'completed'];
+  if (status === 'charging') return ['completed'];
   return [];
 }
 
 const ACTION_UI = {
   confirmed: { label: 'Approve', icon: Check, variant: 'primary' },
   rejected: { label: 'Reject', icon: X, variant: 'danger' },
-  completed: { label: 'Mark completed', icon: CheckCheck, variant: 'sky' },
+  charging: { label: '⚡ Start Charging', icon: Zap, variant: 'primary' },
+  completed: { label: '✓ Complete & Free Bay', icon: CheckCheck, variant: 'sky' },
 };
 
 export function StatusActions({ booking, onChanged, size = 'sm' }) {

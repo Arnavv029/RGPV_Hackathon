@@ -515,6 +515,22 @@ export default function Scanner() {
                 )}
 
                 <div className="border-t border-line p-6">
+                  {b.status === 'confirmed' && (
+                    <div className="mb-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-300">
+                      ⚡ <b>Vehicle Arrived:</b> Ticket verified! Connect charger and click <b>Start Charging</b> below to begin session.
+                    </div>
+                  )}
+                  {b.status === 'charging' && (
+                    <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300">
+                      🔌 <b>Charging In Progress:</b> When the vehicle finishes or unplugs (even if leaving early), click <b>Complete & Free Bay</b> to instantly reopen this bay in real-time.
+                    </div>
+                  )}
+                  {b.status === 'completed' && (
+                    <div className="mb-4 rounded-xl border border-sky-500/30 bg-sky-500/10 p-3 text-xs text-sky-300">
+                      ✓ <b>Session Completed:</b> Bay has been released and 1 booking quota credit deducted.
+                    </div>
+                  )}
+
                   <StatusActions
                     booking={b}
                     size="md"

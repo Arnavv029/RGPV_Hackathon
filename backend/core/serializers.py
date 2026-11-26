@@ -365,6 +365,7 @@ class BookingDetailSerializer(serializers.ModelSerializer):
             'battery_capacity_kwh', 'current_soc', 'target_soc',
             'energy_required_kwh', 'charging_power_kw', 'estimated_duration_minutes',
             'booking_date', 'start_time', 'end_time',
+            'session_started_at', 'session_completed_at',
             'payment_status', 'transaction_id',
             'refund_amount', 'refund_percentage',
             'cancelled_at',
@@ -428,7 +429,7 @@ class BookingStatusUpdateSerializer(serializers.ModelSerializer):
         fields = ['status']
 
     def validate_status(self, value):
-        allowed = ['confirmed', 'rejected', 'completed']
+        allowed = ['confirmed', 'rejected', 'charging', 'completed']
         if value not in allowed:
             raise serializers.ValidationError(
                 f"Status must be one of: {allowed}"
@@ -441,15 +442,20 @@ class BookingStatusUpdateSerializer(serializers.ModelSerializer):
         if not booking or not new_status:
             return attrs
         old = booking.status
-        if new_status == 'completed':
-            if old != 'confirmed':
+        if new_status == 'charging':
+            if old not in ('confirmed', 'pending'):
                 raise serializers.ValidationError({
-                    'status': 'Only confirmed bookings can be marked completed after charging.'
+                    'status': 'Charging session can only be started from confirmed or pending bookings.'
+                })
+        elif new_status == 'completed':
+            if old not in ('charging', 'confirmed'):
+                raise serializers.ValidationError({
+                    'status': 'Only active charging or confirmed bookings can be marked completed.'
                 })
         elif new_status in ('confirmed', 'rejected'):
-            if old != 'pending':
+            if old not in ('pending', 'confirmed'):
                 raise serializers.ValidationError({
-                    'status': 'You can only approve or reject bookings that are still pending.'
+                    'status': 'You can only approve or reject bookings that are pending or confirmed.'
                 })
         return attrs
 

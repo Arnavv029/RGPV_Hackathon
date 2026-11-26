@@ -144,24 +144,23 @@ def process_autopay_renewal(membership):
 
 def apply_owner_membership_to_booking(booking):
     """
-    Applies membership quota and commission rules to a confirmed booking:
-    1. If owner has remaining bookings (from 20 free trial or active paid plan):
-       - Uses 1 booking from quota.
+    Applies membership quota and commission rules to a booking:
+    1. If owner has remaining bookings:
+       - Uses 1 booking from quota (decrements bookings_remaining, increments bookings_used).
        - Commission rate = 0%.
-       - If quota reaches 0 and autopay is enabled, automatically renews plan.
-    2. If owner has 0 quota remaining (Free Tier):
+       - If quota hits 0, auto-renews if autopay is enabled.
+    2. If owner has 0 quota remaining:
        - Charges 5% platform commission on booking amount.
-       - Owner earnings = amount_paid - 5% commission.
-       - Station is not prioritized.
     """
     owner = booking.station.owner
     membership = get_or_create_owner_membership(owner)
     amount_paid = Decimal(str(booking.amount_paid or 0))
 
     if membership.bookings_remaining > 0:
-        # Covered by membership quota
-        membership.bookings_remaining -= 1
-        membership.bookings_used += 1
+        if not getattr(booking, 'quota_deducted', False):
+            membership.bookings_remaining -= 1
+            membership.bookings_used += 1
+            booking.quota_deducted = True
 
         booking.commission_rate = Decimal('0.00')
         booking.commission_amount = Decimal('0.00')
@@ -180,16 +179,27 @@ def apply_owner_membership_to_booking(booking):
         # Free plan with exhausted quota: Charge 5% platform commission
         commission_rate = Decimal('5.00')
         commission_amount = (amount_paid * Decimal('0.05')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-        owner_earnings = max(Decimal('0.00'), amount_paid - commission_amount)
-
         booking.commission_rate = commission_rate
         booking.commission_amount = commission_amount
-        booking.owner_earnings = owner_earnings
+        booking.owner_earnings = max(Decimal('0.00'), amount_paid - commission_amount)
 
-        membership.bookings_used += 1
+        if not getattr(booking, 'quota_deducted', False):
+            membership.bookings_used += 1
+            booking.quota_deducted = True
+
         membership.plan = 'free'
         membership.is_priority = False
         membership.save()
 
-    booking.save(update_fields=['commission_rate', 'commission_amount', 'owner_earnings'])
+    booking.save(update_fields=['commission_rate', 'commission_amount', 'owner_earnings', 'quota_deducted'])
     return booking
+
+
+def deduct_membership_quota_on_completion(booking):
+    """
+    Deducts 1 booking quota from the station owner's membership when charging finishes.
+    Idempotent: only decrements once per booking.
+    """
+    if getattr(booking, 'quota_deducted', False):
+        return
+    apply_owner_membership_to_booking(booking)

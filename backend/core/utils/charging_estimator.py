@@ -21,6 +21,9 @@ from core.models import Booking, Station, TimeSlot
 
 logger = logging.getLogger(__name__)
 
+STATION_OPEN_TIME = time(8, 0)    # 08:00 AM
+STATION_CLOSE_TIME = time(22, 0)  # 10:00 PM
+
 DISCLAIMER_TEXT = (
     "Values shown are estimates based on standard battery charging algorithms. "
     "Actual charging speed and duration may vary depending on vehicle battery thermal management, "
@@ -201,10 +204,10 @@ def get_station_booked_intervals(station, booking_date):
     """
     parsed_date = parse_date_str(booking_date)
     
-    # 1. Fetch active bookings (confirmed or pending)
+    # 1. Fetch active bookings (confirmed, pending, or actively charging)
     bookings = Booking.objects.filter(
         station=station,
-        status__in=['pending', 'confirmed'],
+        status__in=['pending', 'confirmed', 'charging'],
         cancelled_at__isnull=True,
     ).filter(
         Q(booking_date=parsed_date) | Q(slot__date=parsed_date)
@@ -217,12 +220,13 @@ def get_station_booked_intervals(station, booking_date):
         if b_start and b_end:
             intervals.append({
                 'booking_id': str(b.booking_id)[:8],
+                'vehicle_number': b.vehicle_number or 'EV Vehicle',
                 'start_time': b_start.strftime('%H:%M'),
                 'end_time': b_end.strftime('%H:%M'),
                 'start_time_raw': b_start,
                 'end_time_raw': b_end,
-                'status': 'booked',
-                'label': f"{b_start.strftime('%I:%M %p')} – {b_end.strftime('%I:%M %p')} (Booked)",
+                'status': b.status,
+                'label': f"{b_start.strftime('%I:%M %p')} – {b_end.strftime('%I:%M %p')} ({'Charging' if b.status == 'charging' else 'Booked'})",
             })
 
     # Sort by start time
@@ -233,20 +237,32 @@ def get_station_booked_intervals(station, booking_date):
 def check_slot_interval_availability(station, booking_date, start_time, end_time, exclude_booking_id=None):
     """
     Checks whether a station has capacity for interval [start_time, end_time] on booking_date.
-    Returns:
-      {
-        'is_available': bool,
-        'conflict_reason': str or None,
-        'overlapping_count': int,
-        'booked_intervals': list,
-        'available_gaps': list,
-      }
+    Validates operating hours (8:00 AM – 10:00 PM), past times, and concurrent capacity.
     """
     parsed_date = parse_date_str(booking_date)
     req_start = parse_time_str(start_time)
     req_end = parse_time_str(end_time)
 
-    # 1. Check if interval is in the past
+    # 1. Station Operating Hours Check (8:00 AM – 10:00 PM)
+    if req_start < STATION_OPEN_TIME or req_start >= STATION_CLOSE_TIME:
+        return {
+            'is_available': False,
+            'conflict_reason': f"Station operating hours are 08:00 AM to 10:00 PM. Cannot book start time at {req_start.strftime('%I:%M %p')}.",
+            'overlapping_count': 0,
+            'booked_intervals': [],
+            'available_gaps': [],
+        }
+
+    if req_end > STATION_CLOSE_TIME or req_end <= req_start:
+        return {
+            'is_available': False,
+            'conflict_reason': f"Charging session ends at {req_end.strftime('%I:%M %p')}, which exceeds station closing time (10:00 PM). Please select an earlier start time or shorter duration.",
+            'overlapping_count': 0,
+            'booked_intervals': [],
+            'available_gaps': [],
+        }
+
+    # 2. Past time check for today
     now = timezone.localtime()
     if parsed_date < now.date():
         return {
@@ -257,23 +273,30 @@ def check_slot_interval_availability(station, booking_date, start_time, end_time
             'available_gaps': [],
         }
 
-    if parsed_date == now.date() and req_start <= now.time():
-        return {
-            'is_available': False,
-            'conflict_reason': f"Selected start time ({req_start.strftime('%I:%M %p')}) has already passed today.",
-            'overlapping_count': 0,
-            'booked_intervals': [],
-            'available_gaps': [],
-        }
+    if parsed_date == now.date():
+        if now.time() >= STATION_CLOSE_TIME:
+            return {
+                'is_available': False,
+                'conflict_reason': 'Station is closed for today (closes at 10:00 PM). Please select tomorrow or an upcoming date.',
+                'overlapping_count': 0,
+                'booked_intervals': [],
+                'available_gaps': [],
+            }
 
-    if req_end <= req_start:
-        return {
-            'is_available': False,
-            'conflict_reason': 'Charging end time must be after start time (cannot cross past midnight).',
-            'overlapping_count': 0,
-            'booked_intervals': [],
-            'available_gaps': [],
-        }
+        # If it's early morning before 8 AM (e.g. 2:00 AM), earliest bookable start time today is 08:00 AM
+        earliest_allowed = max(STATION_OPEN_TIME, (now + timedelta(minutes=5)).time())
+        if req_start < earliest_allowed:
+            if now.time() < STATION_OPEN_TIME:
+                reason = f"Station opens at 8:00 AM. Earliest reservation start time today is 08:00 AM."
+            else:
+                reason = f"Selected start time ({req_start.strftime('%I:%M %p')}) has already passed today."
+            return {
+                'is_available': False,
+                'conflict_reason': reason,
+                'overlapping_count': 0,
+                'booked_intervals': [],
+                'available_gaps': [],
+            }
 
     # 2. Get existing booked intervals
     all_booked = get_station_booked_intervals(station, parsed_date)
