@@ -70,7 +70,7 @@ export default function Login() {
     setLoading(true);
     try {
       if (mode === 'login') {
-        const user = await login({ email: form.email.trim(), password: form.password });
+        const user = await login({ email: form.email.trim(), password: form.password.trim() });
         toast.success(`Welcome back${user.first_name ? `, ${user.first_name}` : ''}!`);
         goHome(user);
       } else {
