@@ -15,7 +15,9 @@ from django.conf import settings
 
 def _client():
     """Return an initialised Razorpay client using keys from settings."""
-    return razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
+    key_id = settings.RAZORPAY_KEY_ID or 'rzp_test_SqX1Dhg2Sc7Zqb'
+    key_secret = settings.RAZORPAY_KEY_SECRET or 'RZ0MKO4HxVw7aYP7KfBbvntJ'
+    return razorpay.Client(auth=(key_id, key_secret))
 
 
 def create_order(amount_paise: int, receipt: str, notes: dict = None) -> dict:

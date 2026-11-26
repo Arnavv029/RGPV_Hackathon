@@ -227,28 +227,7 @@ def generate_driving_route(start_coords, end_coords):
 
     direct_dist = haversine_distance(lat1, lon1, lat2, lon2)
 
-    # 1. Attempt to query OSRM driving service
-    try:
-        url = f"https://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=full&geometries=geojson&steps=true"
-        resp = requests.get(url, timeout=3.5)
-        if resp.status_code == 200:
-            data = resp.json()
-            if data.get('code') == 'Ok' and data.get('routes'):
-                route = data['routes'][0]
-                total_dist_km = round(route['distance'] / 1000.0, 2)
-                total_duration_min = round(route['duration'] / 60.0, 1)
-                coordinates = route['geometry']['coordinates']
-                latlngs = [[c[1], c[0]] for c in coordinates]
-                return {
-                    'distance_km': total_dist_km,
-                    'duration_min': total_duration_min,
-                    'waypoints': latlngs,
-                    'is_real_road_geometry': True,
-                }
-    except Exception as e:
-        logger.info(f"OSRM router fallback used: {e}")
-
-    # 2. Highway Corridor Anchors for Bhopal <-> Indore corridor
+    # 1. Highway Corridor Anchors for Bhopal <-> Indore corridor (prioritized for exact highway accuracy)
     is_fwd, is_rev = is_bhopal_indore_corridor(start_coords, end_coords)
     if is_fwd or is_rev:
         anchors = list(BHOPAL_INDORE_HIGHWAY_WAYPOINTS)
@@ -282,6 +261,27 @@ def generate_driving_route(start_coords, end_coords):
             'waypoints': dense_waypoints,
             'is_real_road_geometry': True,
         }
+
+    # 2. Attempt to query OSRM driving service for other routes
+    try:
+        url = f"https://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=full&geometries=geojson&steps=true"
+        resp = requests.get(url, timeout=3.5)
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get('code') == 'Ok' and data.get('routes'):
+                route = data['routes'][0]
+                total_dist_km = round(route['distance'] / 1000.0, 2)
+                total_duration_min = round(route['duration'] / 60.0, 1)
+                coordinates = route['geometry']['coordinates']
+                latlngs = [[c[1], c[0]] for c in coordinates]
+                return {
+                    'distance_km': total_dist_km,
+                    'duration_min': total_duration_min,
+                    'waypoints': latlngs,
+                    'is_real_road_geometry': True,
+                }
+    except Exception as e:
+        logger.info(f"OSRM router fallback used: {e}")
 
     # 3. Standard fallback generator for other routes
     road_factor = 1.25 if direct_dist > 5 else 1.15
@@ -342,8 +342,8 @@ def find_stations_along_route(waypoints, total_route_km):
     route_len = cumulative_dist[-1] if cumulative_dist else total_route_km
     is_highway_trip = (route_len > 30.0)
 
-    # For highway trips, keep corridor tight (6 km) to capture stations right on the highway
-    max_corridor_km = 6.0 if is_highway_trip else 4.0
+    # For highway trips, keep corridor flexible (12 km) to capture stations on bypasses and exits
+    max_corridor_km = 12.0 if is_highway_trip else 6.0
 
     results = []
 

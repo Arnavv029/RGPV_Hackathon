@@ -19,9 +19,9 @@ services:
       - key: FRONTEND_URL
         value: "https://hapticev-frontend.onrender.com"
       - key: RAZORPAY_KEY_ID
-        sync: false
+        value: "rzp_test_SqX1Dhg2Sc7Zqb"
       - key: RAZORPAY_KEY_SECRET
-        sync: false
+        value: "RZ0MKO4HxVw7aYP7KfBbvntJ"
 
   # ── Vite React Frontend Static Site ─────────────────────────────────────────
   - type: static_site

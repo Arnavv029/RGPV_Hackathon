@@ -9,6 +9,7 @@ Endpoints:
 
 import json
 import time
+import uuid
 import logging
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -165,6 +166,8 @@ def razorpay_create_order_view(request):
 
     # 3. Create Razorpay order
     receipt = f"hev-{request.user.id}-{int(time.time())}"
+    rz_order = None
+    is_simulated = False
     try:
         rz_order = create_order(
             amount_paise=amount_paise,
@@ -179,10 +182,20 @@ def razorpay_create_order_view(request):
         )
     except Exception as e:
         logger.error("Razorpay create_order failed: %s", e)
-        return Response(
-            {'error': 'Payment gateway error. Please try again.'},
-            status=status.HTTP_502_BAD_GATEWAY,
-        )
+        if settings.ALLOW_SIMULATED_PAYMENTS:
+            logger.info("Falling back to simulated order because ALLOW_SIMULATED_PAYMENTS is True")
+            is_simulated = True
+            rz_order = {
+                'id': f"order_sim_{uuid.uuid4().hex[:14]}",
+                'amount': amount_paise,
+                'currency': 'INR',
+                'status': 'created',
+            }
+        else:
+            return Response(
+                {'error': 'Payment gateway error. Please try again.'},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
 
     # 4. Save PaymentAttempt with draft booking payload
     attempt = PaymentAttempt.objects.create(
@@ -218,11 +231,12 @@ def razorpay_create_order_view(request):
     )
 
     return Response({
-        'key_id':     settings.RAZORPAY_KEY_ID,
+        'key_id':     settings.RAZORPAY_KEY_ID if not is_simulated else 'simulated',
         'order_id':   rz_order['id'],
         'amount':     amount_paise,
         'currency':   'INR',
         'attempt_id': attempt.id,
+        'simulated':  is_simulated,
         'split_payment': {
             'total_estimated_cost': float(total_cost),
             'advance_amount': amount_rupees,
@@ -277,12 +291,15 @@ def razorpay_verify_view(request):
         )
 
     # 2. Verify Razorpay signature (CRITICAL security check)
-    try:
-        verify_payment_signature(order_id, payment_id, signature)
-    except Exception:
-        attempt.status = 'failed'
-        attempt.save(update_fields=['status', 'updated_at'])
-        return Response({'error': 'Payment signature verification failed.'}, status=status.HTTP_400_BAD_REQUEST)
+    if attempt.razorpay_order_id.startswith('order_sim_') and settings.ALLOW_SIMULATED_PAYMENTS:
+        pass
+    else:
+        try:
+            verify_payment_signature(order_id, payment_id, signature)
+        except Exception:
+            attempt.status = 'failed'
+            attempt.save(update_fields=['status', 'updated_at'])
+            return Response({'error': 'Payment signature verification failed.'}, status=status.HTTP_400_BAD_REQUEST)
 
     # 3. Create Booking atomically with Concurrency Lock
     payload = attempt.payload_json

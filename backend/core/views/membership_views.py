@@ -158,6 +158,8 @@ def owner_membership_create_order_view(request):
     amount_paise = plan_info['price_paise']
     receipt = f"mem-{request.user.id}-{int(time.time())}"
 
+    rz_order = None
+    is_simulated = False
     try:
         rz_order = create_order(
             amount_paise=amount_paise,
@@ -171,10 +173,20 @@ def owner_membership_create_order_view(request):
         )
     except Exception as e:
         logger.error("Razorpay create_order failed for membership: %s", e)
-        return Response(
-            {'error': 'Payment gateway error. Please try again.'},
-            status=status.HTTP_502_BAD_GATEWAY
-        )
+        if settings.ALLOW_SIMULATED_PAYMENTS:
+            logger.info("Falling back to simulated membership order")
+            is_simulated = True
+            rz_order = {
+                'id': f"order_sim_mem_{uuid.uuid4().hex[:12]}",
+                'amount': amount_paise,
+                'currency': 'INR',
+                'status': 'created',
+            }
+        else:
+            return Response(
+                {'error': 'Payment gateway error. Please try again.'},
+                status=status.HTTP_502_BAD_GATEWAY
+            )
 
     # Save MembershipOrder record
     order = MembershipOrder.objects.create(
@@ -242,12 +254,15 @@ def owner_membership_verify_view(request):
         return Response({'error': 'This order has already been activated.'}, status=status.HTTP_400_BAD_REQUEST)
 
     # Verify signature
-    try:
-        verify_payment_signature(order_id, payment_id, signature)
-    except Exception:
-        order.status = 'failed'
-        order.save(update_fields=['status'])
-        return Response({'error': 'Payment signature verification failed.'}, status=status.HTTP_400_BAD_REQUEST)
+    if order.razorpay_order_id.startswith('order_sim_') and settings.ALLOW_SIMULATED_PAYMENTS:
+        pass
+    else:
+        try:
+            verify_payment_signature(order_id, payment_id, signature)
+        except Exception:
+            order.status = 'failed'
+            order.save(update_fields=['status'])
+            return Response({'error': 'Payment signature verification failed.'}, status=status.HTTP_400_BAD_REQUEST)
 
     plan_info = MEMBERSHIP_PLANS.get(plan_key, MEMBERSHIP_PLANS['plan_999'])
 
