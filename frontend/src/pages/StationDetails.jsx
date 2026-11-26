@@ -75,6 +75,7 @@ export default function StationDetails() {
   const [estimate, setEstimate] = useState(null);
   const [estimating, setEstimating] = useState(false);
   const [estimateError, setEstimateError] = useState('');
+  const [selectedBay, setSelectedBay] = useState(1);
 
   const station = useAsync(() => endpoints.station(id), [id]);
   const reviews = useAsync(() => endpoints.stationReviews(id, { limit: 20 }), [id]);
@@ -195,7 +196,7 @@ export default function StationDetails() {
   const bookedIntervals = scheduleData.booked_intervals || [];
   const availableGaps = scheduleData.available_gaps || [];
 
-  const effectiveTariff = s.effective_tariff_per_kwh || s.tariff_per_kwh || 12.0;
+  const effectiveTariff = s.effective_tariff_per_kwh || s.price_per_hour || s.tariff_per_kwh || 20.0;
 
   const proceed = () => {
     if (!estimate || !estimate.is_available) return;
@@ -206,6 +207,8 @@ export default function StationDetails() {
         stationId: s.id,
         stationName: s.name,
         stationLocation: s.location_text,
+        bayNumber: selectedBay,
+        bayName: `Bay #${selectedBay}`,
         slotDate: estimate.booking_date,
         slotStart: estimate.start_time,
         slotEnd: estimate.end_time,
@@ -258,14 +261,14 @@ export default function StationDetails() {
         <div className="absolute inset-x-0 bottom-0 flex flex-col gap-4 p-6 sm:flex-row sm:items-end sm:justify-between sm:p-8">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/40 bg-emerald-500/20 px-3 py-1 text-xs font-semibold text-emerald-300">
-                <Zap className="size-3.5 fill-emerald-300" /> {s.total_slots} Fast Charging Bays
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/20 px-3 py-1 text-xs font-bold text-emerald-700 dark:text-emerald-300">
+                <Zap className="size-3.5 fill-emerald-500 dark:fill-emerald-300" /> {s.total_slots} Fast Charging Bays
               </span>
               <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/40 bg-amber-400/20 px-3 py-1 text-xs font-semibold text-amber-300">
                 ⚡ Rated {s.power_kw || 30} kW
               </span>
               <span className="inline-flex items-center gap-1 rounded-full border border-sky-400/40 bg-sky-400/20 px-3 py-1 text-xs font-semibold text-sky-200">
-                ₹{effectiveTariff}/kWh
+                ₹{effectiveTariff}/unit
               </span>
             </div>
             <h1 className="display-xl mt-3 text-[clamp(2rem,4vw,3.2rem)] !text-white">{s.name}</h1>
@@ -361,7 +364,7 @@ export default function StationDetails() {
                   <Spinner label="Loading schedule timeline…" />
                 </div>
               ) : bookedIntervals.length === 0 ? (
-                <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-xs text-emerald-300">
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/15 p-3 text-xs font-semibold text-emerald-800 dark:text-emerald-300">
                   ⚡ All chargers are currently open on this day with zero conflicting bookings!
                 </div>
               ) : (
@@ -390,9 +393,9 @@ export default function StationDetails() {
                         key={idx}
                         type="button"
                         onClick={() => selectGap(gap)}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-300 transition hover:bg-emerald-500/20"
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-1 text-xs font-semibold text-emerald-800 dark:text-emerald-300 transition hover:bg-emerald-500/25"
                       >
-                        <span className="size-1.5 rounded-full bg-emerald-400" />
+                        <span className="size-1.5 rounded-full bg-emerald-500" />
                         <span>{gap.label}</span>
                       </button>
                     ))}
@@ -402,19 +405,74 @@ export default function StationDetails() {
             </div>
           </Card>
 
-          {/* ── STEP 2: Vehicle & Battery Estimation Engine ────────────── */}
+          {/* ── STEP 2: Dedicated Bay Selection (Showcase All Station Bays) ────────────── */}
           <Card className="p-6">
             <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h2 className="flex items-center gap-2.5 text-xl uppercase tracking-wider text-bone">
-                  <BatteryCharging className="size-5 text-amber-300" /> 2. Vehicle & Charging Needs
+                  <Zap className="size-5 text-amber-300" /> 2. Select Station Bay
+                </h2>
+                <p className="text-xs text-neutral-400">
+                  This station has {s.total_slots} dedicated charging bays. Choose your preferred bay.
+                </p>
+              </div>
+              <div className="rounded-full border border-amber-400/30 bg-amber-500/10 px-3 py-1 text-xs font-bold text-amber-300">
+                {s.total_slots} Dedicated Bays
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+              {Array.from({ length: Math.max(1, s.total_slots || 1) }, (_, i) => i + 1).map((bayNum) => {
+                const isSelected = selectedBay === bayNum;
+                return (
+                  <button
+                    key={bayNum}
+                    type="button"
+                    onClick={() => setSelectedBay(bayNum)}
+                    className={`relative flex flex-col items-center justify-between rounded-2xl border p-3.5 text-center transition ${
+                      isSelected
+                        ? 'border-amber-400 bg-amber-500/15 shadow-[0_0_20px_rgba(245,158,11,0.25)] ring-1 ring-amber-400'
+                        : 'border-line/80 bg-surface/50 hover:border-amber-400/40 hover:bg-hover'
+                    }`}
+                  >
+                    <div className="flex w-full items-center justify-between text-[11px]">
+                      <span className="font-mono font-bold text-amber-300">Bay #{bayNum}</span>
+                      <span className={`inline-block size-2 rounded-full ${isSelected ? 'bg-emerald-500 animate-pulse' : 'bg-neutral-600'}`} />
+                    </div>
+                    <div className="my-2.5 text-center">
+                      <div className="font-display text-base font-bold text-bone">
+                        Bay {bayNum}
+                      </div>
+                      <div className="text-[10px] text-neutral-400">
+                        {s.charger_type || 'Fast DC'} · {s.power_kw || 60} kW
+                      </div>
+                    </div>
+                    <div className={`w-full rounded-lg py-1 text-[10px] font-semibold ${
+                      isSelected
+                        ? 'bg-amber-400/20 text-amber-300'
+                        : 'border border-line/60 bg-hover text-neutral-300'
+                    }`}>
+                      {isSelected ? '✓ Selected Bay' : 'Available'}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </Card>
+
+          {/* ── STEP 3: Vehicle & Battery Estimation Engine ────────────── */}
+          <Card className="p-6">
+            <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="flex items-center gap-2.5 text-xl uppercase tracking-wider text-bone">
+                  <BatteryCharging className="size-5 text-amber-300" /> 3. Vehicle & Charging Needs
                 </h2>
                 <p className="text-xs text-neutral-400">
                   Calculates exact energy required and estimated charging duration.
                 </p>
               </div>
               <div className="rounded-full border border-amber-400/30 bg-amber-500/10 px-3 py-1 text-xs font-bold text-amber-300">
-                Tariff: ₹{effectiveTariff}/kWh
+                Tariff: ₹{effectiveTariff}/unit
               </div>
             </div>
 
@@ -774,6 +832,10 @@ export default function StationDetails() {
                     </div>
 
                     <div className="space-y-2 rounded-xl border border-line bg-surface/50 p-3.5 text-xs">
+                      <div className="flex justify-between text-neutral-400">
+                        <span>Selected Bay</span>
+                        <span className="font-bold text-amber-300">⚡ Bay #{selectedBay}</span>
+                      </div>
                       <div className="flex justify-between text-neutral-400">
                         <span>Energy to Add</span>
                         <span className="font-semibold text-bone">{estimate.energy_required_kwh} kWh</span>

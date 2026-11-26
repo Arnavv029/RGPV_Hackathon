@@ -3,11 +3,11 @@ export function directionsUrl(station) {
   if (!station) return null;
   const lat = Number(station.latitude);
   const lng = Number(station.longitude);
-  if (station.latitude != null && station.longitude != null && Number.isFinite(lat) && Number.isFinite(lng)) {
+  if (Number.isFinite(lat) && Number.isFinite(lng) && lat !== 0 && lng !== 0) {
     return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
   }
-  const query = station.location_text || station.name;
-  return query ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}` : null;
+  const query = [station.name, station.location_text].filter(Boolean).join(', ');
+  return query ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(query)}&travelmode=driving` : null;
 }
 
 export function openDirections(station) {

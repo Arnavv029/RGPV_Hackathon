@@ -200,6 +200,22 @@ def calculate_optimal_segment_energy_kwh(
     return max(0.01 * distance_km * base_kwh_per_km, e_seg)
 
 
+def is_bhopal_sehore_corridor(start_geo, dest_geo):
+    """Checks whether the route travels between the Bhopal area and Sehore area."""
+    bhopal_lat, bhopal_lng = 23.25, 77.41
+    sehore_lat, sehore_lng = 23.20, 77.08
+
+    d_start_bhopal = haversine_distance(start_geo['lat'], start_geo['lng'], bhopal_lat, bhopal_lng)
+    d_dest_sehore = haversine_distance(dest_geo['lat'], dest_geo['lng'], sehore_lat, sehore_lng)
+
+    d_start_sehore = haversine_distance(start_geo['lat'], start_geo['lng'], sehore_lat, sehore_lng)
+    d_dest_bhopal = haversine_distance(dest_geo['lat'], dest_geo['lng'], bhopal_lat, bhopal_lng)
+
+    forward = (d_start_bhopal < 30.0 and d_dest_sehore < 20.0)
+    reverse = (d_start_sehore < 20.0 and d_dest_bhopal < 30.0)
+    return forward, reverse
+
+
 def is_bhopal_indore_corridor(start_geo, dest_geo):
     """Checks whether the route travels between the Bhopal area and Indore area."""
     bhopal_lat, bhopal_lng = 23.25, 77.41
@@ -229,10 +245,17 @@ def generate_driving_route(start_coords, end_coords):
 
     # 1. Highway Corridor Anchors for Bhopal <-> Indore corridor (prioritized for exact highway accuracy)
     is_fwd, is_rev = is_bhopal_indore_corridor(start_coords, end_coords)
-    if is_fwd or is_rev:
-        anchors = list(BHOPAL_INDORE_HIGHWAY_WAYPOINTS)
-        if is_rev:
-            anchors.reverse()
+    is_sh_fwd, is_sh_rev = is_bhopal_sehore_corridor(start_coords, end_coords)
+
+    if is_fwd or is_rev or is_sh_fwd or is_sh_rev:
+        if is_sh_fwd or is_sh_rev:
+            anchors = list(BHOPAL_INDORE_HIGHWAY_WAYPOINTS[:5])
+            if is_sh_rev:
+                anchors.reverse()
+        else:
+            anchors = list(BHOPAL_INDORE_HIGHWAY_WAYPOINTS)
+            if is_rev:
+                anchors.reverse()
 
         # Connect start to first anchor and last anchor to destination
         dense_waypoints = [[start_coords['lat'], start_coords['lng']]]
@@ -253,7 +276,7 @@ def generate_driving_route(start_coords, end_coords):
         # Ensure destination is the final point
         dense_waypoints.append([end_coords['lat'], end_coords['lng']])
         total_road_dist = round(total_road_dist, 1)
-        est_duration = round((total_road_dist / 75.0) * 60.0, 1)  # ~75 km/h average highway speed
+        est_duration = round((total_road_dist / 70.0) * 60.0, 1)  # ~70 km/h average highway speed
 
         return {
             'distance_km': total_road_dist,
@@ -373,10 +396,9 @@ def find_stations_along_route(waypoints, total_route_km):
         # For highway trips, filter out city stations before the highway starts
         # (e.g. driver doesn't stop at an origin city mall before even leaving the city)
         if is_highway_trip:
-            # Must be ahead along the travel path (>= 12 km from start) and before destination entry
-            if best_along_dist < 12.0 or best_along_dist > (route_len - 5.0):
+            # Must be ahead along the travel highway (>= 8 km from start) and within route destination scope
+            if best_along_dist < 8.0 or best_along_dist > (route_len + 10.0):
                 continue
-            # Detour must be minimal (< 4 km) because highway drivers want chargers on the road
             if min_perp_dist > max_corridor_km:
                 continue
         else:

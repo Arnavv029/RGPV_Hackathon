@@ -137,13 +137,28 @@ export default function Navbar() {
             <ThemeToggle className="hidden sm:grid" />
             {isAuthenticated ? (
               <div className="hidden items-center gap-3 lg:flex">
-                <div className="flex items-center gap-2.5 rounded-full border border-line py-1 pl-1 pr-4">
-                  <span className="grid size-8 place-items-center rounded-full bg-gradient-to-br from-amber-300 to-amber-600 text-[11px] font-bold text-on-accent">
-                    {initials(user)}
-                  </span>
+                <div className="flex items-center gap-2.5 rounded-full border border-line/80 bg-surface/60 py-1 pl-1 pr-4 shadow-sm backdrop-blur-md">
+                  <div className="relative">
+                    <img
+                      src={`https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(fullName(user))}&backgroundColor=f59e0b,ea580c,ca8a04&textColor=ffffff&fontWeight=700`}
+                      alt={fullName(user)}
+                      className="size-8.5 rounded-full border border-amber-400/50 object-cover shadow-inner"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                        e.currentTarget.nextElementSibling.style.display = 'grid';
+                      }}
+                    />
+                    <span
+                      style={{ display: 'none' }}
+                      className="size-8.5 place-items-center rounded-full bg-gradient-to-br from-amber-300 to-amber-600 text-[11px] font-bold text-on-accent"
+                    >
+                      {initials(user)}
+                    </span>
+                    <span className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-surface bg-emerald-500" />
+                  </div>
                   <div className="leading-tight">
                     <div className="max-w-32 truncate text-xs font-semibold text-bone">{fullName(user)}</div>
-                    <div className="text-[10px] uppercase tracking-wider text-neutral-500">{user.role}</div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-amber-300/90">{user.role}</div>
                   </div>
                 </div>
                 <button

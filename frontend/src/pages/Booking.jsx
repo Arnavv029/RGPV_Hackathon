@@ -85,6 +85,10 @@ export default function Booking() {
       setError('Please fill in your name, phone and email.');
       return;
     }
+    if (!form.vehicle_number || !form.vehicle_number.trim()) {
+      setError('Vehicle registration number is mandatory to confirm booking.');
+      return;
+    }
 
     try {
       setStage('ordering');
@@ -212,16 +216,20 @@ export default function Booking() {
           </Card>
 
           <Card className="p-6">
-            <SectionTitle icon={CarFront}>Vehicle</SectionTitle>
+            <SectionTitle icon={CarFront}>Vehicle Details *</SectionTitle>
             <div>
-              <Field label="Registration number">
+              <Field label="Registration number *" icon={CarFront}>
                 <Input
                   value={form.vehicle_number}
                   onChange={(e) => setForm((f) => ({ ...f, vehicle_number: e.target.value.toUpperCase() }))}
                   placeholder="MP 04 AB 1234"
                   maxLength={20}
+                  required
                 />
               </Field>
+              <p className="mt-1.5 text-[11px] text-neutral-400">
+                Vehicle registration number is mandatory to confirm this charging bay reservation.
+              </p>
             </div>
           </Card>
 
@@ -261,6 +269,13 @@ export default function Booking() {
                 <Chip icon={CalendarDays} label={dateShort(pending.slotDate)} />
                 <Chip icon={Clock} label={`${time12(pending.slotStart)} – ${time12(pending.slotEnd)}`} />
               </div>
+
+              {pending.bayNumber && (
+                <div className="flex items-center justify-between rounded-xl border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-xs">
+                  <span className="font-semibold text-neutral-300">Selected Bay:</span>
+                  <span className="font-bold text-amber-300">⚡ Bay #{pending.bayNumber} (Dedicated)</span>
+                </div>
+              )}
 
               {pending.batteryCapacityKwh && (
                 <div className="rounded-xl border border-line bg-surface/50 p-3 text-xs space-y-1.5">

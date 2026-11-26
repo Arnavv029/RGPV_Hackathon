@@ -89,6 +89,10 @@ def razorpay_create_order_view(request):
     if errors:
         return Response(errors, status=status.HTTP_400_BAD_REQUEST)
 
+    vehicle_number = (data.get('vehicle_number') or '').strip()
+    if not vehicle_number:
+        return Response({'error': 'Vehicle registration number is required to confirm booking.'}, status=status.HTTP_400_BAD_REQUEST)
+
     # 1. Check if smart estimation params are present
     battery_capacity = data.get('battery_capacity_kwh') or data.get('battery_capacity')
     current_soc = data.get('current_soc') if data.get('current_soc') is not None else data.get('current_battery')

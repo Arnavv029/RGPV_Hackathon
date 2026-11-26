@@ -140,6 +140,10 @@ def create_booking_view(request):
     if errors:
         return Response(errors, status=status.HTTP_400_BAD_REQUEST)
 
+    vehicle_number = (vd.get('vehicle_number') or request.data.get('vehicle_number') or '').strip()
+    if not vehicle_number:
+        return Response({'error': 'Vehicle registration number is required to confirm booking.'}, status=status.HTTP_400_BAD_REQUEST)
+
     slot_obj = vd.get('slot')
     station = slot_obj.station if slot_obj else None
 

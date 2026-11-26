@@ -367,13 +367,6 @@ export default function RouteIntelligence() {
               and automatically calculates exact battery drain, required charging top-up, and arrival battery.
             </p>
           </div>
-
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-mint-500/30 bg-mint-500/10 px-3 py-1.5 text-xs font-semibold text-mint-300">
-              <ShieldCheck className="size-3.5 text-mint-400" />
-              15% Safety Reserve Guaranteed
-            </span>
-          </div>
         </div>
       </motion.header>
 
@@ -550,14 +543,6 @@ export default function RouteIntelligence() {
                   <span>5% (Depleted)</span>
                   <span>50%</span>
                   <span>100% (Full)</span>
-                </div>
-              </div>
-
-              {/* Automated Optimal Mathematical Physics Engine Callout */}
-              <div className="flex items-start gap-3 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-3.5 text-xs text-emerald-200">
-                <Sparkles className="mt-0.5 size-4 shrink-0 text-emerald-400" />
-                <div>
-                  <span className="font-bold text-bone">Automated Mathematical EV Engine:</span> Highway velocity aerodynamics ($C_d \times A \times v^2$), terrain elevation potential energy, traffic flow, and HVAC climate baseline are automatically computed with a 15% safety reserve.
                 </div>
               </div>
 

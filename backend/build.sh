@@ -12,7 +12,7 @@ python manage.py collectstatic --no-input
 echo "Applying database migrations..."
 python manage.py migrate --no-input
 
-# Seed initial demo stations and mechanics if database is empty
+# Seed highway stations and mechanics if database is empty
 python -c "
 import os, django
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'ev_backend.settings')
@@ -20,10 +20,9 @@ django.setup()
 from core.models import Station
 if Station.objects.count() == 0:
     from django.core.management import call_command
-    print('Fresh database detected. Seeding initial demo network...')
+    print('Fresh database detected. Seeding highway EV network...')
     try:
-        call_command('seed_data')
-        call_command('seed_bhopal')
+        call_command('seed_highway_stations')
         print('Initial seed completed successfully!')
     except Exception as e:
         print('Seed warning:', e)

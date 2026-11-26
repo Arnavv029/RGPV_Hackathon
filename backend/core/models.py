@@ -157,12 +157,17 @@ class Station(models.Model):
 
     @property
     def effective_tariff_per_kwh(self):
-        """Returns the ₹/kWh tariff rate, falling back to price_per_hour/power_kw or ₹12/kWh."""
+        """Returns the ₹/unit tariff rate set by the station owner."""
+        if self.price_per_hour and float(self.price_per_hour) > 0:
+            return float(self.price_per_hour)
         if self.tariff_per_kwh and float(self.tariff_per_kwh) > 0:
             return float(self.tariff_per_kwh)
-        if self.price_per_hour and self.power_kw and float(self.power_kw) > 0:
-            return round(float(self.price_per_hour) / float(self.power_kw), 2)
-        return 12.00
+        return 20.00
+
+    def save(self, *args, **kwargs):
+        if self.price_per_hour and float(self.price_per_hour) > 0:
+            self.tariff_per_kwh = self.price_per_hour
+        super().save(*args, **kwargs)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
