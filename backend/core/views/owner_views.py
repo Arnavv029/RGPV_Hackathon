@@ -448,6 +448,9 @@ def owner_update_booking_status_view(request, pk):
             TimeSlot.objects.filter(pk=booking.slot_id, booked_count__gt=0).update(
                 booked_count=F('booked_count') - 1
             )
+        elif new_status == 'completed':
+            booking.remaining_paid = True
+            booking.save(update_fields=['remaining_paid'])
         serializer.save()
         if new_status in ('confirmed', 'rejected'):
             queue_booking_email(booking, new_status)

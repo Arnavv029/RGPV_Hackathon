@@ -41,7 +41,7 @@ class FlowTestCase(TestCase):
         self.driver = User.objects.create_user(username='driver', email='Driver@Example.com', password='pass12345', role='user')
         self.station = Station.objects.create(
             owner=self.owner, name='Arera Fast Charge', location_text='Arera Colony, Bhopal',
-            latitude=23.2156, longitude=77.4304, price_per_hour=Decimal('100.00'), is_active=True, phone='9876543210',
+            latitude=23.2156, longitude=77.4304, price_per_hour=Decimal('25.00'), is_active=True, phone='9876543210',
         )
         self.tomorrow = timezone.localdate() + timedelta(days=1)
         self.slot = TimeSlot.objects.create(
@@ -134,7 +134,7 @@ class StationAndSlotTests(FlowTestCase):
         ids = [s['id'] for s in r.data['slots']]
         self.assertIn(self.slot.id, ids)
         self.assertNotIn(closed.id, ids)
-        self.assertEqual(r.data['slots'][0]['dynamic_price']['base_rate'], 100.0)
+        self.assertEqual(r.data['slots'][0]['dynamic_price']['base_rate'], 25.0)
 
         r = self.driver_api.get(f'/api/stations/{self.station.id}/slots/', {'date': str(timezone.localdate() - timedelta(days=1))})
         self.assertEqual(r.data['slots'], [])
@@ -160,7 +160,7 @@ class BookingTests(FlowTestCase):
         booking = Booking.objects.get(pk=r.data['booking']['id'])
 
         # price comes from the server, not the client's amount_paid=1
-        self.assertGreaterEqual(booking.amount_paid, Decimal('100.00'))
+        self.assertGreaterEqual(booking.amount_paid, Decimal('15.00'))
         self.assertEqual(booking.status, 'pending')
         self.assertTrue(booking.qr_code)
         self.slot.refresh_from_db()

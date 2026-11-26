@@ -126,6 +126,11 @@ class Station(models.Model):
         max_digits=8, decimal_places=2, null=True, blank=True,
         help_text='Rate in ₹ per hour of charging'
     )
+    # Unit tariff in ₹ per kWh (e.g. ₹12.00/kWh)
+    tariff_per_kwh = models.DecimalField(
+        max_digits=6, decimal_places=2, default=12.00,
+        help_text='Rate in ₹ per kWh of energy'
+    )
 
     # Is this station currently active/visible?
     is_active = models.BooleanField(default=True)
@@ -149,6 +154,15 @@ class Station(models.Model):
         except Exception:
             pass
         return False
+
+    @property
+    def effective_tariff_per_kwh(self):
+        """Returns the ₹/kWh tariff rate, falling back to price_per_hour/power_kw or ₹12/kWh."""
+        if self.tariff_per_kwh and float(self.tariff_per_kwh) > 0:
+            return float(self.tariff_per_kwh)
+        if self.price_per_hour and self.power_kw and float(self.power_kw) > 0:
+            return round(float(self.price_per_hour) / float(self.power_kw), 2)
+        return 12.00
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -272,8 +286,29 @@ class Booking(models.Model):
     slot = models.ForeignKey(
         TimeSlot,
         on_delete=models.CASCADE,
-        related_name='bookings'
+        related_name='bookings',
+        null=True,
+        blank=True
     )
+
+    # ── Charging Session Estimation & Dynamic Interval Details ────────────────
+    battery_capacity_kwh = models.FloatField(null=True, blank=True, help_text="Vehicle battery capacity in kWh")
+    current_soc          = models.FloatField(null=True, blank=True, help_text="Initial battery % (SOC)")
+    target_soc           = models.FloatField(null=True, blank=True, help_text="Target battery % (SOC)")
+    energy_required_kwh  = models.FloatField(null=True, blank=True, help_text="Calculated energy in kWh")
+    charging_power_kw    = models.FloatField(null=True, blank=True, help_text="Effective charging power in kW")
+    estimated_duration_minutes = models.PositiveIntegerField(null=True, blank=True, help_text="Duration in minutes")
+
+    booking_date         = models.DateField(null=True, blank=True, help_text="Date of charging session")
+    start_time           = models.TimeField(null=True, blank=True, help_text="Start time of charging session")
+    end_time             = models.TimeField(null=True, blank=True, help_text="End time of charging session")
+
+    # ── Split Payment (50% Online Advance, 50% At Station) ───────────────────
+    total_estimated_cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="Total estimated cost in INR")
+    advance_amount       = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="50% online advance deposit in INR")
+    remaining_amount     = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="50% balance payable at station in INR")
+    advance_paid         = models.BooleanField(default=False, help_text="True if 50% online advance is paid")
+    remaining_paid       = models.BooleanField(default=False, help_text="True if 50% balance is paid at station")
 
     # ── Personal Details (captured at booking time) ───────────────────────────
     # These are filled in the Booking Form on the frontend
@@ -342,6 +377,16 @@ class Booking(models.Model):
     # When was this booking made?
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        if self.slot:
+            if not self.booking_date:
+                self.booking_date = self.slot.date
+            if not self.start_time:
+                self.start_time = self.slot.start_time
+            if not self.end_time:
+                self.end_time = self.slot.end_time
+        super().save(*args, **kwargs)
 
     class Meta:
         ordering = ['-created_at']  # Newest bookings first

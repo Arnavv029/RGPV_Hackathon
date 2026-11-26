@@ -10,6 +10,7 @@ import NotFound from '@/pages/NotFound';
 
 // Each area is its own chunk, so a driver never downloads the owner console.
 const Home = lazy(() => import('@/pages/Home'));
+const RouteIntelligence = lazy(() => import('@/pages/RouteIntelligence'));
 const StationDetails = lazy(() => import('@/pages/StationDetails'));
 const Booking = lazy(() => import('@/pages/Booking'));
 const BookingDetail = lazy(() => import('@/pages/BookingDetail'));
@@ -39,6 +40,7 @@ export default function App() {
             {/* Drivers */}
             <Route element={<RequireAuth roles={['user']} />}>
               <Route path="/app" element={page(<Home />)} />
+              <Route path="/app/route-intelligence" element={page(<RouteIntelligence />)} />
               <Route path="/app/stations/:id" element={page(<StationDetails />)} />
               <Route path="/app/book" element={page(<Booking />)} />
               <Route path="/app/bookings" element={page(<History />)} />

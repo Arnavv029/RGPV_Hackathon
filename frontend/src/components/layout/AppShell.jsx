@@ -1,6 +1,7 @@
 import { Suspense } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Spinner } from '@/components/ui/Feedback';
+import ErrorBoundary from '@/components/ui/ErrorBoundary';
 import { ScrollProgress } from '@/components/motion/Reveal';
 import Navbar from './Navbar';
 import Footer from './Footer';
@@ -14,9 +15,11 @@ export default function AppShell({ wide = false }) {
       <main
         className={wide ? 'w-full flex-1' : 'mx-auto w-full max-w-[1400px] flex-1 px-5 pt-10 sm:px-8'}
       >
-        <Suspense fallback={<Spinner className="min-h-[50vh]" />}>
-          <Outlet />
-        </Suspense>
+        <ErrorBoundary>
+          <Suspense fallback={<Spinner className="min-h-[50vh]" />}>
+            <Outlet />
+          </Suspense>
+        </ErrorBoundary>
       </main>
       <Footer />
     </div>

@@ -146,7 +146,7 @@ export default function BookingRequests() {
                     <Car className="size-3.5" /> {b.vehicle_number || b.vehicle_type || '—'}
                   </span>
                   <span className="font-semibold text-bone">
-                    {inr(b.amount_paid, { decimals: 2 })} <span className="font-normal capitalize text-neutral-500">· {b.payment_status}</span>
+                    Adv: {inr(b.amount_paid, { decimals: 2 })} {b.remaining_amount > 0 && <span className="text-amber-300 font-normal">· Due: {inr(b.remaining_amount)}</span>}
                   </span>
                 </div>
 

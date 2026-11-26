@@ -147,6 +147,12 @@ export const endpoints = {
   station: (id) => api.get(`/stations/${id}/`),
   stationReviews: (id, params) => api.get(`/stations/${id}/reviews/${qs(params)}`),
   stationSlots: (id, date) => api.get(`/stations/${id}/slots/${qs({ date })}`),
+  stationSchedule: (id, date) => api.get(`/stations/${id}/schedule/${qs({ date })}`),
+  estimateCharging: (id, data) => api.post(`/stations/${id}/estimate-charging/`, data),
+
+  // Smart Route Intelligence
+  smartRoutePlan: (data) => api.post('/routes/smart-plan/', data),
+  smartRouteRecalculate: (data) => api.post('/routes/recalculate/', data),
 
   // Bookings (user side)
   createBooking: (data) => api.post('/bookings/', data),

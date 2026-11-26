@@ -124,8 +124,8 @@ export default function AddStation() {
               <Field label="Charging points">
                 <Input type="number" min="1" value={form.total_slots} onChange={set('total_slots')} />
               </Field>
-              <Field label="Base price (₹/hr)" hint="AI pricing adjusts this with demand">
-                <Input type="number" min="0" step="1" value={form.price_per_hour} onChange={set('price_per_hour')} placeholder="120" />
+              <Field label="Base price (₹/unit)" hint="Rate per unit (e.g. ₹15 to ₹30/unit)">
+                <Input type="number" min="0" step="1" value={form.price_per_hour} onChange={set('price_per_hour')} placeholder="20" />
               </Field>
               <Field label="Contact phone">
                 <Input type="tel" value={form.phone} onChange={set('phone')} placeholder="+91 98765 43210" />

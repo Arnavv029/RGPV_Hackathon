@@ -20,9 +20,11 @@ export const qrSrc = (qr) => (!qr ? null : qr.startsWith('data:') ? qr : `data:i
  * the vehicle and its state of charge.
  */
 export function perUnitRate(station) {
+  if (station?.effective_tariff_per_kwh) return Number(station.effective_tariff_per_kwh);
+  if (station?.tariff_per_kwh) return Number(station.tariff_per_kwh);
   const hourly = Number(station?.price_per_hour);
   const kw = Number(station?.power_kw);
-  if (!Number.isFinite(hourly) || !Number.isFinite(kw) || hourly <= 0 || kw <= 0) return null;
+  if (!Number.isFinite(hourly) || !Number.isFinite(kw) || hourly <= 0 || kw <= 0) return 12.0;
   return hourly / kw;
 }
 
@@ -106,13 +108,11 @@ export default function StationCard({ station, active }) {
               <span className="font-display text-2xl font-bold text-white">
                 {station.price_per_hour ? inr(station.price_per_hour) : 'Free'}
               </span>
-              {station.price_per_hour && <span className="text-xs text-white/70"> /hour</span>}
+              {station.price_per_hour && <span className="text-xs text-white/70"> /unit</span>}
             </div>
-            {unit && (
-              <span className="rounded-full bg-black/50 px-2 py-1 text-[10px] font-semibold text-white/80 backdrop-blur-md">
-                ≈ {inr(unit, { decimals: 0 })}/kWh
-              </span>
-            )}
+            <span className="rounded-full border border-white/10 bg-black/60 px-2.5 py-1 text-[10px] font-semibold text-amber-300 backdrop-blur-md">
+              Per Unit (kWh)
+            </span>
           </div>
         </div>
 

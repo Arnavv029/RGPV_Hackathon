@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import { Circle, MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
+import { Circle, MapContainer, Marker, Polyline, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 
 /**
@@ -19,9 +19,13 @@ const TILE_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyrigh
 /** Saturated marker colours, readable on a light basemap. */
 const TONES = {
   mint: { core: '#059669', ring: 'rgba(5,150,105,0.35)' },
+  emerald: { core: '#10b981', ring: 'rgba(16,185,129,0.35)' },
   amber: { core: '#d97706', ring: 'rgba(217,119,6,0.35)' },
+  gold: { core: '#f59e0b', ring: 'rgba(245,158,11,0.5)' },
   rose: { core: '#e11d48', ring: 'rgba(225,29,72,0.35)' },
+  red: { core: '#ef4444', ring: 'rgba(239,68,68,0.35)' },
   sky: { core: '#0284c7', ring: 'rgba(2,132,199,0.35)' },
+  violet: { core: '#8b5cf6', ring: 'rgba(139,92,246,0.35)' },
   muted: { core: '#475569', ring: 'rgba(71,85,105,0.3)' },
 };
 
@@ -75,20 +79,36 @@ const userIcon = L.divIcon({
  * Re-frames the map whenever the framed coordinates change. `focus` (a list of
  * [lat, lng]) overrides the default of "every point plus the user".
  */
-function FitBounds({ points, user, focus }) {
+function FitBounds({ points, user, focus, routeWaypoints }) {
   const map = useMap();
   const coords = useMemo(() => {
     if (focus?.length) return focus;
     const all = points.map((p) => [p.lat, p.lng]);
     if (user) all.push([user.lat, user.lng]);
+    if (routeWaypoints?.length) {
+      // Sample waypoints so we don't pass thousands of points to fitBounds
+      const step = Math.max(1, Math.floor(routeWaypoints.length / 20));
+      for (let i = 0; i < routeWaypoints.length; i += step) {
+        all.push(routeWaypoints[i]);
+      }
+      all.push(routeWaypoints[routeWaypoints.length - 1]);
+    }
     return all;
-  }, [points, user, focus]);
+  }, [points, user, focus, routeWaypoints]);
   const key = JSON.stringify(coords);
   useEffect(() => {
-    if (coords.length === 1) map.setView(coords[0], 14, { animate: true });
-    else if (coords.length > 1) map.fitBounds(coords, { padding: [48, 48], maxZoom: 15, animate: true });
+    try {
+      map.invalidateSize();
+      if (coords.length === 1) {
+        map.setView(coords[0], 14, { animate: false });
+      } else if (coords.length > 1) {
+        map.fitBounds(coords, { padding: [48, 48], maxZoom: 15, animate: false });
+      }
+    } catch (err) {
+      console.warn('Map fit bounds warning:', err);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
+  }, [key, map]);
   return null;
 }
 
@@ -96,7 +116,13 @@ function FitBounds({ points, user, focus }) {
 function FlyTo({ target }) {
   const map = useMap();
   useEffect(() => {
-    if (target) map.flyTo([target.lat, target.lng], Math.max(map.getZoom(), 14), { duration: 0.8 });
+    if (target && Number.isFinite(target.lat) && Number.isFinite(target.lng)) {
+      try {
+        map.flyTo([target.lat, target.lng], Math.max(map.getZoom(), 14), { duration: 0.8 });
+      } catch (err) {
+        console.warn('Map flyTo warning:', err);
+      }
+    }
   }, [target, map]);
   return null;
 }
@@ -120,6 +146,9 @@ export default function LiveMap({
   onSelect,
   onPick,
   radiusKm,
+  radarPulse = false,
+  routeWaypoints = null,
+  routeColor = '#0284c7',
   className = 'h-[460px]',
   fit = true,
   focus = null,
@@ -132,7 +161,7 @@ export default function LiveMap({
     <div className={`relative overflow-hidden rounded-3xl border border-line shadow-[0_30px_80px_-40px_rgba(0,0,0,0.9)] ${className}`}>
       <MapContainer center={center} zoom={13} scrollWheelZoom className="h-full w-full" zoomControl>
         <TileLayer attribution={TILE_ATTRIBUTION} url={TILE_URL} maxZoom={19} />
-        {fit && <FitBounds points={valid} user={user} focus={focus} />}
+        {fit && <FitBounds points={valid} user={user} focus={focus} routeWaypoints={routeWaypoints} />}
         <FlyTo target={active} />
         {onPick && <ClickPicker onPick={onPick} />}
 
@@ -142,13 +171,48 @@ export default function LiveMap({
               <Popup>You are here</Popup>
             </Marker>
             {radiusKm && (
-              <Circle
-                center={[user.lat, user.lng]}
-                radius={radiusKm * 1000}
-                pathOptions={{ color: '#0284c7', weight: 1.5, fillColor: '#0ea5e9', fillOpacity: 0.07, dashArray: '5 7' }}
-              />
+              <>
+                <Circle
+                  center={[user.lat, user.lng]}
+                  radius={radiusKm * 1000}
+                  pathOptions={{
+                    color: radarPulse ? '#10b981' : '#0284c7',
+                    weight: radarPulse ? 2 : 1.5,
+                    fillColor: radarPulse ? '#10b981' : '#0ea5e9',
+                    fillOpacity: radarPulse ? 0.08 : 0.06,
+                    dashArray: radarPulse ? '6 8' : '5 7',
+                  }}
+                />
+                {radarPulse && (
+                  <Circle
+                    center={[user.lat, user.lng]}
+                    radius={radiusKm * 500}
+                    pathOptions={{
+                      color: '#10b981',
+                      weight: 1,
+                      fillColor: '#10b981',
+                      fillOpacity: 0.04,
+                      dashArray: '3 5',
+                    }}
+                  />
+                )}
+              </>
             )}
           </>
+        )}
+
+        {/* Route geometry line */}
+        {routeWaypoints && routeWaypoints.length > 1 && (
+          <Polyline
+            positions={routeWaypoints}
+            pathOptions={{
+              color: routeColor,
+              weight: 5,
+              opacity: 0.85,
+              lineCap: 'round',
+              lineJoin: 'round',
+            }}
+          />
         )}
 
         {valid.map((p) => (

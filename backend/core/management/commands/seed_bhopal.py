@@ -76,23 +76,23 @@ class Command(BaseCommand):
 
     def price_for(self, kw):
         """
-        Hourly price derived from rated output with affordable rates:
-          - 7 kW AC: ₹25/hr
-          - 22 kW AC: ₹40/hr
-          - 30 kW DC: ₹55/hr
-          - 50 kW DC: ₹70/hr
-          - 60 kW DC: ₹85/hr
+        Per-unit (₹/kWh) price derived from rated output strictly between ₹15 and ₹30:
+          - 7 kW AC: ₹15.00 / unit
+          - 22 kW AC: ₹18.00 / unit
+          - 30 kW DC: ₹22.00 / unit
+          - 50 kW DC: ₹26.00 / unit
+          - 60 kW DC: ₹30.00 / unit
         """
         if kw <= 7:
-            return Decimal('25.00')
+            return Decimal('15.00')
         elif kw <= 22:
-            return Decimal('40.00')
+            return Decimal('18.00')
         elif kw <= 30:
-            return Decimal('55.00')
+            return Decimal('22.00')
         elif kw <= 50:
-            return Decimal('70.00')
+            return Decimal('26.00')
         else:
-            return Decimal('85.00')
+            return Decimal('30.00')
 
     @transaction.atomic
     def handle(self, *args, **opts):
@@ -170,6 +170,5 @@ class Command(BaseCommand):
         ))
         # Plain ASCII: Windows consoles are cp1252 and choke on the rupee sign.
         self.stdout.write(
-            f'Tariff used: Rs.{TARIFF_PER_KWH}/kWh -> '
-            f'Rs.{self.price_for(7)}/hr (7 kW) to Rs.{self.price_for(60)}/hr (60 kW).'
+            f'Tariff used: Rs.{self.price_for(7)}/unit (7 kW) to Rs.{self.price_for(60)}/unit (60 kW).'
         )

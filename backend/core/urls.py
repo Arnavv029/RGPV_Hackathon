@@ -33,7 +33,7 @@ from django.urls import path
 from core.views import (
     auth_views, station_views, booking_views, owner_views,
     review_views, emergency_views, payment_views, mechanic_views,
-    membership_views
+    membership_views, route_views
 )
 
 urlpatterns = [
@@ -50,6 +50,12 @@ urlpatterns = [
     path('stations/<int:pk>/',     station_views.station_detail_view,  name='station-detail'),
     path('stations/<int:pk>/reviews/', review_views.station_reviews_list_view, name='station-reviews'),
     path('stations/<int:pk>/slots/', station_views.station_slots_view, name='station-slots'),
+    path('stations/<int:pk>/schedule/', station_views.station_schedule_view, name='station-schedule'),
+    path('stations/<int:pk>/estimate-charging/', station_views.station_estimate_charging_view, name='station-estimate-charging'),
+
+    # ── SMART ROUTE INTELLIGENCE ──────────────────────────────────────────────
+    path('routes/smart-plan/',     route_views.smart_route_plan_view,         name='smart-route-plan'),
+    path('routes/recalculate/',    route_views.smart_route_recalculate_view,  name='smart-route-recalculate'),
 
     # ── BOOKINGS (User side) ──────────────────────────────────────────────────
     path('bookings/',                            booking_views.create_booking_view,  name='booking-create'),

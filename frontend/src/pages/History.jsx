@@ -100,10 +100,11 @@ export default function History() {
                     <Badge status={b.status} />
                   </div>
                   <p className="mt-1.5 text-sm text-neutral-400">
-                    {dateShort(b.slot?.date)} · {time12(b.slot?.start_time)} – {time12(b.slot?.end_time)}
+                    {dateShort(b.booking_date || b.slot?.date)} · {time12(b.start_time || b.slot?.start_time)} – {time12(b.end_time || b.slot?.end_time)}
                   </p>
                   <p className="mt-1 text-xs text-neutral-500">
-                    {inr(b.amount_paid, { decimals: 2 })}
+                    Adv: {inr(b.amount_paid, { decimals: 2 })}
+                    {Number(b.remaining_amount) > 0 && ` · Due at station: ${inr(b.remaining_amount, { decimals: 2 })}`}
                     {Number(b.refund_amount) > 0 && ` · refunded ${inr(b.refund_amount, { decimals: 2 })}`}
                     {b.has_review && ' · reviewed'}
                   </p>

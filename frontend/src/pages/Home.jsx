@@ -1,12 +1,13 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import {
+  Compass,
   Crosshair,
   LayoutGrid,
   Map as MapIcon,
   MapPinned,
   Route,
   Search,
-  SlidersHorizontal,
+  Sparkles,
   Star,
   Zap,
 } from 'lucide-react';
@@ -27,20 +28,12 @@ const SORTS = [
   { value: 'rating', label: 'Top rated' },
 ];
 
-/**
- * Trip-range presets. The long options matter: a driver planning a highway run
- * wants to reserve a slot at the far end of today's range, not next door.
- */
-const RANGES = [5, 10, 25, 50, 100, 200];
-const MAX_RANGE = 200;
+// Automatically restrict /app to 30 km range
+const AUTO_RADIUS_KM = 30;
+const DEFAULT_COORDS = { lat: 23.2599, lng: 77.4126 }; // Bhopal center
 
-// Map auto-zoom: frame the driver plus their closest chargers instead of the whole city.
-const NEARBY_KM = 10;
-const NEARBY_MAX = 5;
-const NEARBY_MIN = 3;
-
-/** Lat/lng box around a point, used to frame the selected search radius. */
-function radiusBox({ lat, lng }, km) {
+/** Lat/lng box around a point, used to frame the 30 km search radius. */
+function radiusBox({ lat, lng }, km = AUTO_RADIUS_KM) {
   const dLat = km / 111;
   const dLng = km / (111 * Math.max(0.2, Math.cos((lat * Math.PI) / 180)));
   return [
@@ -51,21 +44,13 @@ function radiusBox({ lat, lng }, km) {
 
 /**
  * What the map should frame:
- *  - no location yet          → every listed station (default behaviour)
- *  - a search range is chosen → the whole range circle
- *  - otherwise                → the driver + up to 5 stations within 10 km;
- *                               if fewer than 3 are that close, the 3 nearest
- *                               wherever they are, so something is always visible.
+ * Frames the user and charging stations within the 30 km boundary.
  */
-function mapFocus(coords, stations, range) {
-  if (!coords) return null;
-  if (range) return radiusBox(coords, range);
-  const byDistance = stations
-    .filter((s) => s.distance != null && Number.isFinite(Number(s.latitude)))
-    .sort((a, b) => Number(a.distance) - Number(b.distance));
-  const near = byDistance.filter((s) => Number(s.distance) <= NEARBY_KM).slice(0, NEARBY_MAX);
-  const picked = near.length >= NEARBY_MIN ? near : byDistance.slice(0, NEARBY_MIN);
-  return [[coords.lat, coords.lng], ...picked.map((s) => [Number(s.latitude), Number(s.longitude)])];
+function mapFocus(coords, stations) {
+  const c = coords || DEFAULT_COORDS;
+  const valid = stations.filter((s) => Number.isFinite(Number(s.latitude)) && Number.isFinite(Number(s.longitude)));
+  if (!valid.length) return radiusBox(c, AUTO_RADIUS_KM);
+  return [[c.lat, c.lng], ...valid.map((s) => [Number(s.latitude), Number(s.longitude)])];
 }
 
 export default function Home() {
@@ -75,19 +60,22 @@ export default function Home() {
   const [sort, setSort] = useState('distance');
   const [minRating, setMinRating] = useState(0);
   const [openOnly, setOpenOnly] = useState(false);
-  const [range, setRange] = useState(null); // km, or null for "anywhere"
   const [activeId, setActiveId] = useState(null);
   const [view, setView] = useState('split');
+
+  const userLat = coords?.lat ?? DEFAULT_COORDS.lat;
+  const userLng = coords?.lng ?? DEFAULT_COORDS.lng;
 
   const { data, loading, error, reload } = useAsync(
     () =>
       endpoints.stations({
-        lat: coords?.lat,
-        lng: coords?.lng,
+        lat: userLat,
+        lng: userLng,
+        radius: AUTO_RADIUS_KM,
         sort: sort === 'rating' ? 'rating' : undefined,
         min_rating: minRating || undefined,
       }),
-    [coords?.lat, coords?.lng, sort, minRating],
+    [userLat, userLng, sort, minRating],
   );
 
   const all = useMemo(() => (Array.isArray(data) ? data : []), [data]);
@@ -101,12 +89,10 @@ export default function Home() {
       );
     }
     if (openOnly) list = list.filter((s) => Number(s.available_slots) > 0);
-    // Range only means something once we know where the driver is.
-    if (range && coords) {
-      list = list.filter((s) => s.distance != null && Number(s.distance) <= range);
-    }
+    // Automatically limit to 30 km range stations only
+    list = list.filter((s) => s.distance != null && Number(s.distance) <= AUTO_RADIUS_KM);
     return list;
-  }, [all, query, openOnly, range, coords]);
+  }, [all, query, openOnly]);
 
   const points = stations.map((s) => ({
     id: s.id,
@@ -121,7 +107,7 @@ export default function Home() {
           <span className={Number(s.available_slots) > 0 ? 'font-semibold text-emerald-600' : 'text-zinc-400'}>
             {Number(s.available_slots) > 0 ? `${s.available_slots} slots today` : 'Full today'}
           </span>
-          <span className="font-bold text-zinc-900">{s.price_per_hour ? `${inr(s.price_per_hour)}/hr` : 'Free'}</span>
+          <span className="font-bold text-zinc-900">{s.price_per_hour ? `${inr(s.price_per_hour)}/unit` : 'Free'}</span>
         </div>
         <Link
           to={`/app/stations/${s.id}`}
@@ -133,7 +119,7 @@ export default function Home() {
     ),
   }));
 
-  const focus = useMemo(() => mapFocus(coords, stations, range), [coords, stations, range]);
+  const focus = useMemo(() => mapFocus(coords, stations), [coords, stations]);
 
   const openCount = stations.filter((s) => Number(s.available_slots) > 0).length;
   const cheapest = stations
@@ -141,12 +127,11 @@ export default function Home() {
     .filter((n) => Number.isFinite(n) && n > 0)
     .sort((a, b) => a - b)[0];
 
-  const filtersOn = query || minRating || openOnly || range;
+  const filtersOn = query || minRating || openOnly;
   const clearFilters = () => {
     setQuery('');
     setMinRating(0);
     setOpenOnly(false);
-    setRange(null);
   };
 
   return (
@@ -171,7 +156,7 @@ export default function Home() {
             {[
               { label: 'Stations', value: loading ? '—' : stations.length, icon: MapPinned },
               { label: 'Open today', value: loading ? '—' : openCount, icon: Zap },
-              { label: 'From', value: loading || !cheapest ? '—' : `${inr(cheapest)}/hr`, icon: Route },
+              { label: 'From', value: loading || !cheapest ? '—' : `${inr(cheapest)}/unit`, icon: Route },
             ].map((s) => (
               <div key={s.label} className="glass rounded-2xl px-4 py-3">
                 <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-neutral-500">
@@ -185,9 +170,30 @@ export default function Home() {
 
         {geoStatus === 'denied' && (
           <p className="mt-4 inline-flex items-center gap-2 rounded-full border border-amber-400/30 bg-amber-400/10 px-3.5 py-1.5 text-xs text-amber-300">
-            Location is off — turn it on for distances and range filtering.
+            Location is off — showing stations within 30 km of Bhopal center. Turn on location for live distances.
           </p>
         )}
+
+        {/* ── Smart Route Intelligence Feature Banner ── */}
+        <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-amber-400/30 bg-gradient-to-r from-amber-400/10 via-amber-400/5 to-transparent p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-amber-400/20 text-amber-300">
+              <Compass className="size-5" />
+            </span>
+            <div>
+              <h2 className="text-sm font-bold text-bone">Smart Route Intelligence & Battery Estimation</h2>
+              <p className="text-xs text-neutral-400">
+                Planning a long trip? Compute exact mathematical battery consumption, discover along-route chargers, and book stops ahead.
+              </p>
+            </div>
+          </div>
+          <Link
+            to="/app/route-intelligence"
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-amber-400 px-4 py-2 text-xs font-bold uppercase tracking-wider text-on-accent transition hover:bg-amber-300"
+          >
+            <Route className="size-3.5" /> Plan Smart Route →
+          </Link>
+        </div>
       </motion.header>
 
       {/* ── Toolbar ───────────────────────────────────────────────────────── */}
@@ -252,59 +258,9 @@ export default function Home() {
           </div>
         </div>
 
-        {/* ── Trip range ────────────────────────────────────────────────────
-            Planning a long drive? Set how far ahead you want to look and book
-            a slot at the far end of the trip, not just around the corner. */}
-        <div className="mt-3 flex flex-col gap-3 rounded-2xl border border-line bg-hover px-4 py-3 sm:flex-row sm:items-center">
-          <div className="flex shrink-0 items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-neutral-400">
-            <SlidersHorizontal className="size-3.5 text-amber-300" />
-            Search within
-          </div>
-
-          <div className="flex flex-1 flex-wrap items-center gap-2">
-            <button
-              onClick={() => setRange(null)}
-              className={`rounded-full border px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider transition ${
-                range === null ? 'border-amber-400 bg-amber-400 text-on-accent' : 'border-line text-neutral-400 hover:text-bone'
-              }`}
-            >
-              Anywhere
-            </button>
-            {RANGES.map((km) => (
-              <button
-                key={km}
-                onClick={() => setRange(km)}
-                disabled={!coords}
-                className={`rounded-full border px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider transition disabled:opacity-40 ${
-                  range === km ? 'border-amber-400 bg-amber-400 text-on-accent' : 'border-line text-neutral-400 hover:text-bone'
-                }`}
-              >
-                {km} km
-              </button>
-            ))}
-
-            <div className="flex min-w-48 flex-1 items-center gap-3 sm:ml-2">
-              <input
-                type="range"
-                min="1"
-                max={MAX_RANGE}
-                step="1"
-                value={range ?? MAX_RANGE}
-                disabled={!coords}
-                onChange={(e) => setRange(Number(e.target.value))}
-                aria-label="Search radius in kilometres"
-                className="h-1 flex-1 cursor-pointer appearance-none rounded-full bg-ink-700 accent-amber-400 disabled:opacity-40"
-              />
-              <span className="w-16 shrink-0 text-right font-display text-sm font-bold text-bone">
-                {range ? `${range} km` : 'Any'}
-              </span>
-            </div>
-          </div>
-        </div>
-
         {!coords && (
           <p className="mt-2 px-4 text-[11px] text-neutral-500">
-            Share your location to filter by distance — we use it only to sort and measure, never to track you.
+            Showing stations within 30 km. Share your location to compute exact distances from your live position.
           </p>
         )}
       </div>
@@ -320,7 +276,7 @@ export default function Home() {
               user={coords}
               activeId={activeId}
               onSelect={setActiveId}
-              radiusKm={range && coords ? range : null}
+              radiusKm={AUTO_RADIUS_KM}
               focus={focus}
               className="h-[360px] lg:h-full"
             />
@@ -336,12 +292,8 @@ export default function Home() {
             ) : stations.length === 0 ? (
               <EmptyState
                 icon={MapPinned}
-                title={range ? `Nothing within ${range} km` : 'No stations match'}
-                description={
-                  range
-                    ? 'Widen the search range, or clear your filters to see the whole Bhopal network.'
-                    : 'Try clearing your search or filters to see more stations.'
-                }
+                title="No stations within 30 km"
+                description="No charging stations were found within a 30 km radius of your location. Try clearing your search or filters."
                 action={
                   filtersOn ? (
                     <Button variant="secondary" onClick={clearFilters}>
@@ -354,8 +306,7 @@ export default function Home() {
               <>
                 <div className="mb-4 flex items-center justify-between px-1">
                   <p className="text-xs text-neutral-500">
-                    Showing <span className="font-semibold text-bone">{stations.length}</span> of {all.length} stations
-                    {range && coords ? ` within ${range} km` : ''}
+                    Showing <span className="font-semibold text-bone">{stations.length}</span> charging {stations.length === 1 ? 'station' : 'stations'} within 30 km
                   </p>
                   {filtersOn && (
                     <button onClick={clearFilters} className="text-[11px] font-bold uppercase tracking-wider text-amber-300">

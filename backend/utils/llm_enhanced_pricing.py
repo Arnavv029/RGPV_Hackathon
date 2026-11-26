@@ -33,9 +33,12 @@ class LLMEnhancedPricingEngine:
     def _load_model(self):
         """Load the pre-trained Random Forest model."""
         try:
+            import warnings
             model_path = Path(settings.BASE_DIR) / 'core' / 'ml' / 'pricing_model.joblib'
             if model_path.exists():
-                self.model = joblib.load(model_path)
+                with warnings.catch_warnings():
+                    warnings.filterwarnings('ignore', category=UserWarning)
+                    self.model = joblib.load(model_path)
                 logger.info(f"✅ Pricing model loaded: {model_path}")
             else:
                 logger.warning(f"⚠️  Pricing model not found at {model_path}. Using fallback pricing.")
@@ -88,11 +91,19 @@ class LLMEnhancedPricingEngine:
         try:
             # Extract features from the slot
             features = self._extract_features(slot)
-            prediction = self.model.predict([features])[0]
+            import pandas as pd
+            import warnings
+            with warnings.catch_warnings():
+                warnings.filterwarnings('ignore', category=UserWarning)
+                features_df = pd.DataFrame(
+                    [features],
+                    columns=['base_price', 'hour', 'day_of_week', 'occupancy_rate', 'station_rating']
+                )
+                prediction = self.model.predict(features_df)[0]
             
-            # Ensure price is reasonable (bounded)
-            min_price = float(slot.station.price_per_hour or 50)
-            max_price = min_price * 3  # Max 3x the base price
+            # Ensure price is reasonable and strictly within ₹15 to ₹30 per unit
+            min_price = max(15.0, float(slot.station.price_per_hour or 18) * 0.85)
+            max_price = min(30.0, float(slot.station.price_per_hour or 18) * 1.35)
             
             return np.clip(prediction, min_price, max_price)
         except Exception as e:
@@ -192,7 +203,7 @@ Based on these factors, provide in JSON format:
     
     def _generate_price_explanation(self, slot, llm_insights: Optional[Dict]) -> str:
         """Generate human-readable explanation for the price."""
-        base_explanation = f"₹{slot.station.price_per_hour}/hr base rate"
+        base_explanation = f"₹{slot.station.price_per_hour}/unit base rate"
         
         if llm_insights and self.llm_client:
             reason = llm_insights.get('reason', '')
@@ -214,7 +225,7 @@ Based on these factors, provide in JSON format:
     
     def _fallback_ml_price(self, slot) -> float:
         """Rule-based fallback pricing when ML model unavailable."""
-        base_price = float(slot.station.price_per_hour or 100)
+        base_price = float(slot.station.price_per_hour or 18)
         hour = slot.start_time.hour
         occupancy = self._calculate_occupancy(slot)
         rating = self._get_station_rating(slot.station)
@@ -224,31 +235,31 @@ Based on these factors, provide in JSON format:
         
         # Peak hours: 8-11 AM, 5-9 PM
         if hour in range(8, 12) or hour in range(17, 22):
-            multiplier *= 1.3
+            multiplier *= 1.15
         
         # Weekend: Saturday=5, Sunday=6
         if slot.date.weekday() >= 5:
-            multiplier *= 1.15
+            multiplier *= 1.10
         
-        # Occupancy surge: up to +40%
-        multiplier *= (1 + occupancy * 0.4)
+        # Occupancy surge: up to +20%
+        multiplier *= (1 + occupancy * 0.2)
         
-        # High rating bonus: +10% for >= 4.5
+        # High rating bonus: +5% for >= 4.5
         if rating >= 4.5:
-            multiplier *= 1.1
+            multiplier *= 1.05
         
         final_price = base_price * multiplier
-        return np.clip(final_price, base_price, base_price * 3)
+        return np.clip(final_price, 15.0, 30.0)
     
     def _fallback_pricing(self, slot) -> Dict[str, Any]:
         """Complete fallback when everything fails."""
-        base_price = float(slot.station.price_per_hour or 100)
+        base_price = float(slot.station.price_per_hour or 18)
         
         return {
-            'price': base_price,
+            'price': np.clip(base_price, 15.0, 30.0),
             'base_price': base_price,
             'currency': 'INR',
-            'explanation': 'Standard pricing rate',
+            'explanation': 'Standard unit rate',
             'llm_factors': None,
             'timestamp': datetime.now().isoformat(),
         }

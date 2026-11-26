@@ -285,7 +285,7 @@ export default function OwnerDashboard() {
                     <span className="flex items-center gap-1">
                       <Star className="size-3 fill-amber-400 text-amber-300" /> {Number(s.avg_rating || 0).toFixed(1)} · {s.review_count} reviews
                     </span>
-                    <span className="font-semibold text-bone">{s.price_per_hour ? `${inr(s.price_per_hour)}/hr` : 'Free'}</span>
+                    <span className="font-semibold text-bone">{s.price_per_hour ? `${inr(s.price_per_hour)}/unit` : 'Free'}</span>
                   </div>
                   <Button size="sm" variant="secondary" block className="mt-4" to={`/owner/slots?station=${s.id}`}>
                     Manage slots & price

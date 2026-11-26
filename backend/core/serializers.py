@@ -129,7 +129,8 @@ class StationSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'description', 'location_text',
             'latitude', 'longitude', 'phone',
-            'total_slots', 'available_slots', 'charger_type', 'power_kw', 'price_per_hour', 'is_active',
+            'total_slots', 'available_slots', 'charger_type', 'power_kw', 'price_per_hour',
+            'tariff_per_kwh', 'effective_tariff_per_kwh', 'is_active',
             'owner', 'owner_name', 'distance', 'image', 'image_url',
             'avg_rating', 'review_count', 'is_priority',
             'created_at'
@@ -359,6 +360,11 @@ class BookingDetailSerializer(serializers.ModelSerializer):
             'full_name', 'phone', 'email',
             'vehicle_number', 'vehicle_type',
             'payment_method', 'amount_paid',
+            'total_estimated_cost', 'advance_amount', 'remaining_amount',
+            'advance_paid', 'remaining_paid',
+            'battery_capacity_kwh', 'current_soc', 'target_soc',
+            'energy_required_kwh', 'charging_power_kw', 'estimated_duration_minutes',
+            'booking_date', 'start_time', 'end_time',
             'payment_status', 'transaction_id',
             'refund_amount', 'refund_percentage',
             'cancelled_at',

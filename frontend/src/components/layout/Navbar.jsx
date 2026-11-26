@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   CalendarClock,
+  Compass,
   Crown,
   Inbox,
   LayoutDashboard,
@@ -8,6 +9,7 @@ import {
   MapPinned,
   Menu,
   PlusCircle,
+  Route,
   ScanLine,
   Siren,
   SlidersHorizontal,
@@ -27,6 +29,7 @@ import Logo from '@/components/brand/Logo';
 const LINKS = {
   user: [
     { to: '/app', label: 'Charging stations', icon: MapPinned, end: true },
+    { to: '/app/route-intelligence', label: 'Smart Route', icon: Compass },
     { to: '/app/bookings', label: 'My bookings', icon: CalendarClock },
     { to: '/app/emergency', label: 'Emergency', icon: Siren, danger: true },
   ],

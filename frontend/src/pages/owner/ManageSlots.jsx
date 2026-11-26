@@ -124,7 +124,7 @@ export default function ManageSlots() {
 
   return (
     <div>
-      <PageHeader eyebrow="Availability" title="Slots & pricing" description="Open bookable time slots and set your base hourly rate. AI pricing adjusts each slot's price around it." />
+      <PageHeader eyebrow="Availability" title="Slots & pricing" description="Open bookable time slots and set your base rate (₹/unit). AI pricing adjusts each slot's price around it." />
 
       <div className="mb-6 grid gap-4 md:grid-cols-[1.2fr_1fr_1fr]">
         <Field label="Station">
@@ -139,7 +139,7 @@ export default function ManageSlots() {
         <Field label="Date">
           <Input type="date" value={date} min={toISODate()} onChange={(e) => setDate(e.target.value)} />
         </Field>
-        <Field label="Base price (₹/hr)" icon={IndianRupee}>
+        <Field label="Base price (₹/unit)" icon={IndianRupee}>
           <div className="flex gap-2">
             <Input withIcon type="number" min="0" value={price} onChange={(e) => setPrice(e.target.value)} />
             <Button type="button" variant="secondary" onClick={savePrice} loading={savingPrice} disabled={String(price) === String(station?.price_per_hour ?? '')}>
@@ -267,7 +267,7 @@ export default function ManageSlots() {
                       <span>
                         {s.booked_count}/{s.capacity} booked
                       </span>
-                      {s.dynamic_price?.hourly_rate != null && <span className="text-neutral-300">{inr(s.dynamic_price.hourly_rate)}</span>}
+                      {s.dynamic_price?.hourly_rate != null && <span className="text-neutral-300">{inr(s.dynamic_price.hourly_rate)}/unit</span>}
                     </div>
                   </motion.div>
                 );

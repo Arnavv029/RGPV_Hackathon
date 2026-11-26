@@ -245,3 +245,257 @@ class DynamicSlotDurationLockTests(TestCase):
         self.assertIsNotNone(remainder_slot)
         self.assertEqual(remainder_slot.booked_count, 0)
         self.assertTrue(remainder_slot.is_available)
+
+
+class SmartRouteIntelligenceTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.user = User.objects.create_user(username='routerider', password='password123', role='user')
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+
+        owner = User.objects.create_user(username='routeowner', password='password123', role='owner')
+        from core.models import Station
+        # Near MP Nagar (within 5 km)
+        self.near_station = Station.objects.create(
+            owner=owner, name='Bhopal Midpoint Point', location_text='MP Nagar, Bhopal',
+            latitude=23.2318, longitude=77.4353, power_kw=60, price_per_hour=30.0, is_active=True,
+        )
+        # Far station (over 100 km away towards Indore)
+        self.far_station = Station.objects.create(
+            owner=owner, name='Dewas Highway Stop', location_text='Dewas Bypass',
+            latitude=22.9676, longitude=76.0534, power_kw=50, price_per_hour=25.0, is_active=True,
+        )
+
+    def test_smart_route_plan_calculation(self):
+        payload = {
+            'start': 'MP Nagar',
+            'destination': 'Indore',
+            'battery_capacity_kwh': 40.5,
+            'max_range_km': 450,
+            'current_battery_pct': 75.0,
+            'target_charge_pct': 80.0,
+            'traffic_condition': 'normal',
+        }
+        res = self.client.post('/api/routes/smart-plan/', payload, format='json')
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+
+        self.assertIn('route', data)
+        self.assertIn('total_distance_km', data['route'])
+        self.assertIn('direct_arrival_battery_pct', data['route'])
+        self.assertIn('along_route_stations', data)
+        self.assertGreaterEqual(len(data['along_route_stations']), 1)
+
+        first_st = data['along_route_stations'][0]
+        self.assertIn('expected_arrival_battery_pct', first_st)
+        self.assertIn('charging_time_minutes', first_st)
+        self.assertIn('destination_arrival_battery_pct', first_st)
+        self.assertIn('reachability', first_st)
+
+    def test_smart_route_recalculate_with_selected_station(self):
+        payload = {
+            'start': 'MP Nagar',
+            'destination': 'Indore',
+            'battery_capacity_kwh': 40.5,
+            'max_range_km': 450,
+            'current_battery_pct': 75.0,
+            'station_id': self.near_station.id,
+        }
+        res = self.client.post('/api/routes/recalculate/', payload, format='json')
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertIsNotNone(data.get('selected_stop_summary'))
+        self.assertEqual(data['selected_stop_summary']['id'], self.near_station.id)
+
+    def test_stations_radar_30km_filtering(self):
+        # Query stations near MP Nagar with 30 km radar
+        res = self.client.get('/api/stations/?lat=23.2318&lng=77.4353&radius=30')
+        self.assertEqual(res.status_code, 200)
+        stations = res.json()
+
+        # Near station should be present (within 30 km)
+        ids = [s['id'] for s in stations]
+        self.assertIn(self.near_station.id, ids)
+
+        # Far station (Dewas ~ 150 km) should be filtered out by 30 km radar
+        self.assertNotIn(self.far_station.id, ids)
+
+    def test_stations_radar_30km_without_explicit_gps(self):
+        # When radius=30 is requested without GPS, it defaults to Bhopal center
+        res = self.client.get('/api/stations/?radius=30')
+        self.assertEqual(res.status_code, 200)
+        stations = res.json()
+
+        ids = [s['id'] for s in stations]
+        # MP Nagar is within 30 km of Bhopal center
+        self.assertIn(self.near_station.id, ids)
+        # Dewas (~150 km) should be filtered out
+        self.assertNotIn(self.far_station.id, ids)
+
+
+class ChargingEstimationAndBookingTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.owner = User.objects.create_user(username='stationowner2', password='password123', role='owner')
+        self.driver = User.objects.create_user(username='evdriver2', password='password123', role='user')
+
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.driver)
+
+        from core.models import Station, Booking, TimeSlot
+        import datetime
+        self.station = Station.objects.create(
+            owner=self.owner,
+            name='Turbo EV Station',
+            location_text='Arera Hills Bhopal',
+            latitude=23.2351,
+            longitude=77.4324,
+            power_kw=30,
+            tariff_per_kwh=12.00,
+            total_slots=1,
+            is_active=True,
+        )
+        self.tomorrow = datetime.date.today() + datetime.timedelta(days=1)
+
+    def test_charging_estimation_formula_calculation(self):
+        """
+        Verify exact formula requested by user:
+          Energy Required = 60 * (80 - 20) / 100 = 36 kWh
+          Charging Time = 36 / 30 = 1.2 hours = 72 minutes
+          Estimated Cost = 36 * 12 = Rs 432
+          100% Online Complete Payment = Rs 432
+          Remaining Balance = Rs 0
+        """
+        from core.utils.charging_estimator import calculate_charging_estimate
+        estimate = calculate_charging_estimate(
+            station=self.station,
+            battery_capacity_kwh=60,
+            current_soc=20,
+            target_soc=80,
+            charger_power_kw=30,
+            start_time='10:00',
+            booking_date=self.tomorrow,
+        )
+
+        self.assertEqual(estimate['energy_required_kwh'], 36.0)
+        self.assertEqual(estimate['duration_minutes'], 72)
+        self.assertEqual(estimate['duration_hours'], 1.2)
+        self.assertEqual(estimate['total_estimated_cost'], 432.0)
+        self.assertEqual(estimate['advance_payment'], 432.0)
+        self.assertEqual(estimate['remaining_payment'], 0.0)
+        self.assertEqual(estimate['start_time'], '10:00')
+        self.assertEqual(estimate['end_time'], '11:12')
+        self.assertTrue(estimate['is_available'])
+
+    def test_estimate_charging_api_endpoint(self):
+        payload = {
+            'battery_capacity_kwh': 60,
+            'current_soc': 20,
+            'target_soc': 80,
+            'charger_power_kw': 30,
+            'booking_date': str(self.tomorrow),
+            'start_time': '10:00',
+        }
+        res = self.client.post(f'/api/stations/{self.station.id}/estimate-charging/', payload, format='json')
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data['energy_required_kwh'], 36.0)
+        self.assertEqual(data['total_estimated_cost'], 432.0)
+        self.assertEqual(data['advance_payment'], 432.0)
+        self.assertEqual(data['remaining_payment'], 0.0)
+        self.assertTrue(data['is_available'])
+
+    def test_prevention_of_dual_booking_at_same_time(self):
+        """
+        Verify production-level concurrency control:
+        If user A books 10:00 to 11:30, user B cannot book overlapping 10:30 to 11:00 on a 1-slot station.
+        """
+        from core.models import Booking, TimeSlot
+        import datetime
+
+        # Create active booking from 10:00 to 11:30
+        slot = TimeSlot.objects.create(
+            station=self.station,
+            date=self.tomorrow,
+            start_time=datetime.time(10, 0),
+            end_time=datetime.time(11, 30),
+            capacity=1,
+            booked_count=1,
+            is_available=True,
+        )
+        Booking.objects.create(
+            user=self.driver,
+            station=self.station,
+            slot=slot,
+            full_name='Driver A',
+            phone='9876543210',
+            email='a@example.com',
+            payment_status='paid',
+            status='confirmed',
+            booking_date=self.tomorrow,
+            start_time=datetime.time(10, 0),
+            end_time=datetime.time(11, 30),
+            advance_paid=True,
+        )
+
+        # User B tries to book 10:30 to 11:15 (overlap conflict!)
+        payload = {
+            'battery_capacity_kwh': 40,
+            'current_soc': 30,
+            'target_soc': 70,
+            'booking_date': str(self.tomorrow),
+            'start_time': '10:30',
+            'custom_duration_minutes': 45,
+        }
+        res = self.client.post(f'/api/stations/{self.station.id}/estimate-charging/', payload, format='json')
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertFalse(data['is_available'])
+        self.assertIn('fully booked', data['conflict_reason'])
+
+        # User B tries to book an open gap 11:30 to 12:30 (should succeed!)
+        payload['start_time'] = '11:30'
+        res2 = self.client.post(f'/api/stations/{self.station.id}/estimate-charging/', payload, format='json')
+        self.assertEqual(res2.status_code, 200)
+        self.assertTrue(res2.json()['is_available'])
+
+    def test_station_schedule_endpoint_returns_booked_intervals_and_gaps(self):
+        from core.models import Booking, TimeSlot
+        import datetime
+
+        # Book 10:00 - 11:30
+        slot = TimeSlot.objects.create(
+            station=self.station,
+            date=self.tomorrow,
+            start_time=datetime.time(10, 0),
+            end_time=datetime.time(11, 30),
+            capacity=1,
+            booked_count=1,
+            is_available=True,
+        )
+        Booking.objects.create(
+            user=self.driver,
+            station=self.station,
+            slot=slot,
+            full_name='Driver A',
+            phone='9876543210',
+            email='a@example.com',
+            payment_status='paid',
+            status='confirmed',
+            booking_date=self.tomorrow,
+            start_time=datetime.time(10, 0),
+            end_time=datetime.time(11, 30),
+            advance_paid=True,
+        )
+
+        res = self.client.get(f'/api/stations/{self.station.id}/schedule/?date={self.tomorrow}')
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(len(data['booked_intervals']), 1)
+        self.assertEqual(data['booked_intervals'][0]['start_time'], '10:00')
+        self.assertEqual(data['booked_intervals'][0]['end_time'], '11:30')
+        self.assertGreaterEqual(len(data['available_gaps']), 1)
+
+
+

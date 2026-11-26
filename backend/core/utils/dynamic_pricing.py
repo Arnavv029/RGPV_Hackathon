@@ -32,7 +32,10 @@ class DynamicPricingEngine:
         model_path = os.path.join(settings.BASE_DIR, 'core', 'ml', 'pricing_model.joblib')
         if os.path.exists(model_path):
             try:
-                self._model = joblib.load(model_path)
+                import warnings
+                with warnings.catch_warnings():
+                    warnings.filterwarnings('ignore', category=UserWarning)
+                    self._model = joblib.load(model_path)
                 logger.info("Random Forest dynamic pricing model loaded successfully.")
             except Exception as e:
                 logger.error(f"Failed to load Random Forest model from {model_path}: {e}")
@@ -67,15 +70,16 @@ class DynamicPricingEngine:
         elif station_rating < 3.5:
             multiplier -= 0.05
 
-        # Cap the multiplier safely between 0.8 (discount) and 2.2 (max surge)
-        multiplier = max(0.8, min(2.2, multiplier))
+        # Cap the multiplier safely between 0.85 (discount) and 1.30 (max surge)
+        multiplier = max(0.85, min(1.30, multiplier))
 
-        return round(base_price * multiplier, 2)
+        final = base_price * multiplier
+        return round(max(15.0, min(30.0, final)), 2)
 
     def get_slot_dynamic_price(self, slot):
         """Calculates dynamic price for a specific slot using Random Forest or fallback rules."""
         # 1. Extract features
-        base_price = float(slot.station.price_per_hour or 80.0)
+        base_price = float(slot.station.price_per_hour or 18.0)
         hour = slot.start_time.hour
         day_of_week = slot.date.weekday()
         
@@ -94,12 +98,18 @@ class DynamicPricingEngine:
         model = self.get_model()
         if model is not None:
             try:
-                # Prepare features as a 2D array: [[base_price, hour, day_of_week, occupancy_rate, station_rating]]
-                features = [[base_price, hour, day_of_week, occupancy_rate, station_rating]]
-                predicted_price = model.predict(features)[0]
-                # Ensure the predicted price is reasonable (never drop below 80% of base price)
-                min_price = base_price * 0.8
-                max_price = base_price * 2.5
+                import pandas as pd
+                import warnings
+                with warnings.catch_warnings():
+                    warnings.filterwarnings('ignore', category=UserWarning)
+                    features_df = pd.DataFrame(
+                        [[base_price, hour, day_of_week, occupancy_rate, station_rating]],
+                        columns=['base_price', 'hour', 'day_of_week', 'occupancy_rate', 'station_rating']
+                    )
+                    predicted_price = model.predict(features_df)[0]
+                # Ensure the predicted price is reasonable and kept strictly within ₹15 to ₹30
+                min_price = max(15.0, base_price * 0.85)
+                max_price = min(30.0, max(15.0, base_price * 1.35))
                 final_price = max(min_price, min(max_price, predicted_price))
                 return round(final_price, 2)
             except Exception as e:

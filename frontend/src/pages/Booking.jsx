@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   TestTube2,
   User,
+  Zap,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
@@ -66,11 +67,13 @@ export default function Booking() {
   const [stage, setStage] = useState('idle'); // idle | ordering | paying | verifying
   const [error, setError] = useState('');
 
-  if (!pending?.slotId) return <Navigate to="/app" replace />;
+  if (!pending?.stationId && !pending?.slotId) return <Navigate to="/app" replace />;
 
   const hours = pending.durationHours || slotHours(pending.slotStart, pending.slotEnd);
-  const rate = Number(pending.pricePerHour || 0);
+  const rate = Number(pending.tariffPerKwh || pending.pricePerHour || 0);
   const total = pending.totalAmount != null ? Number(pending.totalAmount) : rate * hours;
+  const advanceToPay = total;
+  const balanceAtStation = 0;
   const busy = stage !== 'idle';
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -88,8 +91,17 @@ export default function Booking() {
       const [Razorpay, order] = await Promise.all([
         loadRazorpay(),
         endpoints.createRazorpayOrder({
-          slot: pending.slotId,
+          station_id: pending.stationId,
+          slot: pending.slotId || undefined,
+          booking_date: pending.slotDate,
+          start_time: pending.slotStart,
+          end_time: pending.slotEnd,
           duration_hours: hours,
+          custom_duration_minutes: pending.durationMinutes,
+          battery_capacity_kwh: pending.batteryCapacityKwh,
+          current_soc: pending.currentSoc,
+          target_soc: pending.targetSoc,
+          charger_power_kw: pending.chargerPowerKw,
           ...form,
           full_name: form.full_name.trim(),
           amount_paid: total,
@@ -102,7 +114,7 @@ export default function Booking() {
         amount: order.amount,
         currency: order.currency || 'INR',
         name: 'HapticEV',
-        description: `Charging slot at ${pending.stationName}`,
+        description: `Charging session at ${pending.stationName}`,
         order_id: order.order_id,
         prefill: order.prefill || { name: form.full_name, email: form.email, contact: form.phone },
         theme: { color: '#e5941c' },
@@ -117,7 +129,7 @@ export default function Booking() {
             });
             sessionStorage.setItem(LAST_BOOKING_KEY, JSON.stringify(result.booking));
             sessionStorage.removeItem(PENDING_BOOKING_KEY);
-            toast.success('Payment successful. Your slot is booked.');
+            toast.success('Payment successful! Your slot is booked.');
             navigate(`/app/bookings/${result.booking.id}`, { replace: true });
           } catch (err) {
             setError(`${err.message} If money was deducted, contact support with your payment ID.`);
@@ -143,7 +155,7 @@ export default function Booking() {
   };
 
   const ctaLabel = {
-    idle: total > 0 ? `Pay ${inr(total, { decimals: 2 })}` : 'Confirm booking',
+    idle: total > 0 ? `Pay · ${inr(total, { decimals: 2 })}` : 'Confirm booking',
     ordering: 'Creating secure order…',
     paying: 'Waiting for payment…',
     verifying: 'Verifying payment…',
@@ -181,7 +193,7 @@ export default function Booking() {
 
           <Card className="p-6">
             <SectionTitle icon={CarFront}>Vehicle</SectionTitle>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div>
               <Field label="Registration number">
                 <Input
                   value={form.vehicle_number}
@@ -189,14 +201,6 @@ export default function Booking() {
                   placeholder="MP 04 AB 1234"
                   maxLength={20}
                 />
-              </Field>
-              <Field label="Vehicle type">
-                <Select value={form.vehicle_type} onChange={set('vehicle_type')}>
-                  <option value="">Select type</option>
-                  {VEHICLE_TYPES.map((v) => (
-                    <option key={v}>{v}</option>
-                  ))}
-                </Select>
               </Field>
             </div>
           </Card>
@@ -238,19 +242,46 @@ export default function Booking() {
                 <Chip icon={Clock} label={`${time12(pending.slotStart)} – ${time12(pending.slotEnd)}`} />
               </div>
 
+              {pending.batteryCapacityKwh && (
+                <div className="rounded-xl border border-line bg-surface/50 p-3 text-xs space-y-1.5">
+                  <div className="flex justify-between text-neutral-400">
+                    <span>Battery & Target</span>
+                    <span className="font-semibold text-bone">
+                      {pending.batteryCapacityKwh} kWh ({pending.currentSoc}% → {pending.targetSoc}%)
+                    </span>
+                  </div>
+                  {pending.energyRequiredKwh && (
+                    <div className="flex justify-between text-neutral-400">
+                      <span>Energy to Add</span>
+                      <span className="font-semibold text-emerald-400">+{pending.energyRequiredKwh} kWh</span>
+                    </div>
+                  )}
+                  {pending.chargerPowerKw && (
+                    <div className="flex justify-between text-neutral-400">
+                      <span>Charger Power</span>
+                      <span className="font-semibold text-bone">{pending.chargerPowerKw} kW</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="space-y-2.5 text-sm">
-                <Row label="Charging rate" value={rate ? `${inr(rate)}/hr` : 'Free'} />
-                {pending.basePrice && Number(pending.basePrice) !== rate && (
-                  <Row label="Base rate" value={<span className="line-through">{inr(pending.basePrice)}/hr</span>} muted />
-                )}
+                <Row label="Unit tariff" value={rate ? `${inr(rate)}/kWh` : 'Free'} />
                 <Row label="Duration" value={formatDuration(hours)} />
-                <div className="flex items-baseline justify-between border-t border-dashed border-line pt-4">
-                  <span className="font-semibold text-bone">Total</span>
+                <div className="flex items-baseline justify-between border-t border-line/60 pt-3 text-sm">
+                  <span className="text-neutral-400">Total Estimated Cost</span>
+                  <span className="font-semibold text-bone">{inr(total, { decimals: 2 })}</span>
+                </div>
+
+                <div className="rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 flex items-baseline justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-amber-300">
+                    Total Payable (100% Online)
+                  </span>
                   <motion.span
                     key={total}
                     initial={{ scale: 1.15, color: '#fcc97b' }}
                     animate={{ scale: 1, color: '#f6f5f2' }}
-                    className="font-display text-3xl font-semibold"
+                    className="font-display text-2xl font-bold text-amber-300"
                   >
                     {inr(total, { decimals: 2 })}
                   </motion.span>
@@ -261,6 +292,17 @@ export default function Booking() {
                 <div className="flex gap-2.5 rounded-xl border border-sky-500/25 bg-sky-500/10 p-3 text-xs leading-relaxed text-neutral-300">
                   <BrainCircuit className="mt-0.5 size-4 shrink-0 text-sky-300" />
                   {pending.priceExplanation}
+                </div>
+              )}
+
+              {pending.routeContext && (
+                <div className="flex gap-2.5 rounded-xl border border-amber-400/40 bg-amber-400/10 p-3 text-xs leading-relaxed text-amber-200">
+                  <Zap className="mt-0.5 size-4 shrink-0 text-amber-300" />
+                  <div>
+                    <span className="font-bold text-bone">Smart Route Trip Plan:</span> Charging from{' '}
+                    <strong className="text-amber-300">{pending.routeContext.currentBatteryPct}%</strong> to{' '}
+                    <strong className="text-emerald-400">{pending.routeContext.targetBatteryPct}%</strong> (+{pending.routeContext.energyToChargeKwh} kWh)
+                  </div>
                 </div>
               )}
 

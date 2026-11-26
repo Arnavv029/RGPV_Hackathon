@@ -42,6 +42,12 @@ from core.utils.booking_rules import (
     validate_slot_duration, lock_or_split_slot
 )
 from core.utils.payment_processor import calculate_refund_percentage, refund_reason
+from core.utils.charging_estimator import (
+    calculate_charging_estimate,
+    check_slot_interval_availability,
+    parse_date_str,
+    parse_time_str
+)
 
 logger = logging.getLogger(__name__)
 from core.utils.upi_payment import (
@@ -134,43 +140,115 @@ def create_booking_view(request):
     if errors:
         return Response(errors, status=status.HTTP_400_BAD_REQUEST)
 
-    duration_hours = float(request.data.get('duration_hours') or 1.0)
-    valid_dur, dur_err = validate_slot_duration(vd['slot'], duration_hours)
-    if not valid_dur:
-        return Response({'error': dur_err}, status=status.HTTP_400_BAD_REQUEST)
+    slot_obj = vd.get('slot')
+    station = slot_obj.station if slot_obj else None
 
-    # Never trust a client-sent amount.
-    amount = float(slot_price(vd['slot'], duration_hours=duration_hours)[2])
+    # Check for smart estimation parameters
+    battery_capacity = request.data.get('battery_capacity_kwh') or request.data.get('battery_capacity')
+    current_soc = request.data.get('current_soc') if request.data.get('current_soc') is not None else request.data.get('current_battery')
+    target_soc = request.data.get('target_soc') if request.data.get('target_soc') is not None else request.data.get('target_battery')
+
+    estimate_dict = None
+    if station and battery_capacity is not None and current_soc is not None and target_soc is not None:
+        b_date = request.data.get('booking_date') or (str(slot_obj.date) if slot_obj else None)
+        s_time = request.data.get('start_time') or (slot_obj.start_time.strftime('%H:%M') if slot_obj else None)
+        c_mins = request.data.get('custom_duration_minutes')
+
+        try:
+            estimate_dict = calculate_charging_estimate(
+                station=station,
+                battery_capacity_kwh=battery_capacity,
+                current_soc=current_soc,
+                target_soc=target_soc,
+                charger_power_kw=request.data.get('charger_power_kw'),
+                vehicle_max_power_kw=request.data.get('vehicle_max_power_kw'),
+                custom_duration_minutes=c_mins,
+                start_time=s_time,
+                booking_date=b_date,
+            )
+        except ValueError as err:
+            return Response({'error': str(err)}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not estimate_dict['is_available']:
+            return Response({'error': estimate_dict['conflict_reason']}, status=status.HTTP_409_CONFLICT)
+
+        total_cost = estimate_dict['total_estimated_cost']
+        advance_payment = total_cost
+        remaining_payment = 0.0
+        amount = total_cost
+        duration_hours = estimate_dict['duration_hours']
+        duration_minutes = estimate_dict['duration_minutes']
+        booking_date_val = estimate_dict['booking_date']
+        start_time_val = estimate_dict['start_time']
+        end_time_val = estimate_dict['end_time']
+    else:
+        duration_hours = float(request.data.get('duration_hours') or 1.0)
+        valid_dur, dur_err = validate_slot_duration(slot_obj, duration_hours)
+        if not valid_dur:
+            return Response({'error': dur_err}, status=status.HTTP_400_BAD_REQUEST)
+
+        full_price = float(slot_price(slot_obj, duration_hours=duration_hours)[2])
+        total_cost = full_price
+        advance_payment = total_cost
+        remaining_payment = 0.0
+        amount = total_cost
+        duration_minutes = int(duration_hours * 60)
+        booking_date_val = str(slot_obj.date)
+        start_time_val = slot_obj.start_time.strftime('%H:%M')
+        from core.utils.charging_estimator import add_minutes_to_time
+        calc_end, _ = add_minutes_to_time(slot_obj.start_time, duration_minutes)
+        end_time_val = calc_end.strftime('%H:%M')
+
+    payment_method = vd.get('payment_method')
 
     # ── Step 1: Validate payment proof ────────────────────────────────────
     if payment_method == 'upi':
-        # For real UPI: validate the UTR number the user got from their payment app
         utr_number = vd.get('utr_number', '').strip()
         is_valid, utr_error = validate_utr(utr_number)
         if not is_valid:
             return Response({'error': utr_error}, status=status.HTTP_400_BAD_REQUEST)
-        txn_id = utr_number.upper()   # UTR itself IS the transaction reference
+        txn_id = utr_number.upper()
 
     elif payment_method == 'debit_card':
-        # Simulation — replace with Razorpay for real card processing
         card_num = vd.get('card_number', '').replace(' ', '')
-        txn_id   = 'CARD' + card_num[-4:] + str(int(amount * 100))
+        txn_id = 'CARD' + card_num[-4:] + str(int(amount * 100))
 
     elif payment_method == 'net_banking':
-        # Simulation — replace with Razorpay for real net banking
         txn_id = 'NB' + vd.get('bank_name', 'BANK')[:4].upper() + str(int(amount * 100))
 
-    else:
-        return Response(
-            {'error': 'Invalid payment method.'},
-            status=status.HTTP_400_BAD_REQUEST
-        )
+    elif payment_method == 'razorpay':
+        txn_id = 'RZP_' + str(int(amount * 100))
 
-    # ── Step 2: Lock slot + create booking atomically ─────────────────────
+    else:
+        return Response({'error': 'Invalid payment method.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # ── Step 2: Lock slot + create booking atomically with Concurrency Control ─────────
+    parsed_date = parse_date_str(booking_date_val)
+    parsed_start = parse_time_str(start_time_val)
+    parsed_end = parse_time_str(end_time_val)
+
     try:
         with transaction.atomic():
-            slot = TimeSlot.objects.select_for_update().select_related('station').get(pk=vd['slot'].pk)
+            station_locked = Station.objects.select_for_update().get(pk=station.pk)
 
+            # Concurrency check: prevent dual slot booking
+            effective_capacity = max(station_locked.total_slots, slot_obj.capacity if slot_obj else 1)
+            overlapping_count = Booking.objects.select_for_update().filter(
+                station=station_locked,
+                booking_date=parsed_date,
+                status__in=['pending', 'confirmed'],
+                cancelled_at__isnull=True,
+                start_time__lt=parsed_end,
+                end_time__gt=parsed_start,
+            ).count()
+
+            if overlapping_count >= effective_capacity:
+                return Response(
+                    {'error': 'This charging slot was just booked by another user. Please select an open gap.'},
+                    status=status.HTTP_409_CONFLICT
+                )
+
+            slot = TimeSlot.objects.select_for_update().select_related('station').get(pk=slot_obj.pk)
             reason = slot_unbookable_reason(slot)
             if reason:
                 return Response({'error': reason}, status=status.HTTP_409_CONFLICT)
@@ -178,25 +256,39 @@ def create_booking_view(request):
             slot = lock_or_split_slot(slot, duration_hours)
 
             booking = Booking.objects.create(
-                user           = request.user,
-                station        = slot.station,
-                slot           = slot,
-                full_name      = vd['full_name'],
-                phone          = vd['phone'],
-                email          = vd['email'],
-                vehicle_number = vd.get('vehicle_number', ''),
-                vehicle_type   = vd.get('vehicle_type', ''),
-                payment_method = vd.get('payment_method'),
-                amount_paid    = amount if amount else None,
-                payment_status = 'paid',
-                transaction_id = txn_id,
-                status         = 'pending',
+                user                       = request.user,
+                station                    = station_locked,
+                slot                       = slot,
+                full_name                  = vd['full_name'],
+                phone                      = vd['phone'],
+                email                      = vd['email'],
+                vehicle_number             = vd.get('vehicle_number', ''),
+                vehicle_type               = vd.get('vehicle_type', ''),
+                payment_method             = payment_method,
+                amount_paid                = amount,
+                total_estimated_cost       = total_cost,
+                advance_amount             = advance_payment,
+                remaining_amount           = 0.0,
+                advance_paid               = True,
+                remaining_paid             = True,
+                battery_capacity_kwh       = float(battery_capacity) if battery_capacity is not None else None,
+                current_soc                = float(current_soc) if current_soc is not None else None,
+                target_soc                 = float(target_soc) if target_soc is not None else None,
+                energy_required_kwh        = estimate_dict['energy_required_kwh'] if estimate_dict else None,
+                charging_power_kw          = estimate_dict['effective_charging_power_kw'] if estimate_dict else (station_locked.power_kw or 30.0),
+                estimated_duration_minutes = duration_minutes,
+                booking_date               = parsed_date,
+                start_time                 = parsed_start,
+                end_time                   = parsed_end,
+                payment_status             = 'paid',
+                transaction_id             = txn_id,
+                status                     = 'pending',
             )
 
             # QR generated ONLY after payment is confirmed
             booking.qr_code = generate_qr_code(booking)
             booking.save()
-            
+
             # Apply station owner's membership quota & 5% commission if free tier
             from core.utils.membership_rules import apply_owner_membership_to_booking
             apply_owner_membership_to_booking(booking)
@@ -211,7 +303,7 @@ def create_booking_view(request):
         )
 
     return Response({
-        'message': 'Payment successful! Booking confirmed. Show the QR code at the station.',
+        'message': 'Payment received! Booking confirmed.',
         'booking': BookingDetailSerializer(booking, context={'request': request}).data,
     }, status=status.HTTP_201_CREATED)
 

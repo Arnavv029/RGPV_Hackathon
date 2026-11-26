@@ -492,6 +492,12 @@ export default function Scanner() {
                 </dl>
 
                 {/* Earnings & Commission pill */}
+                {b.remaining_amount > 0 && !b.remaining_paid && (
+                  <div className="mx-6 mb-3 rounded-xl border border-amber-400/40 bg-amber-500/15 p-3 text-xs flex items-center justify-between text-amber-200">
+                    <span className="font-semibold">⚡ Balance to Collect at Station:</span>
+                    <span className="font-display text-base font-bold text-amber-300">{inr(b.remaining_amount, { decimals: 2 })}</span>
+                  </div>
+                )}
                 {b.amount_paid > 0 && (
                   <div className="mx-6 mb-4 rounded-xl border border-line bg-ink-900/50 p-3 text-xs">
                     {Number(b.commission_amount || 0) > 0 ? (

@@ -317,7 +317,7 @@ export default function Landing() {
             <TextReveal as="h2" text="Every charger, fully specified" className="display-xl text-[clamp(2.2rem,5vw,4.2rem)]" />
             <Reveal delay={0.15}>
               <p className="mt-6 max-w-md leading-relaxed text-neutral-400">
-                Connector, power rating, price per hour, live ratings and the exact slots left today — all on the station
+                Connector, power rating, price per unit (kWh), live ratings and the exact slots left today — all on the station
                 page before you commit. Slow AC points for two-wheelers, DC fast points for cars.
               </p>
             </Reveal>
@@ -412,7 +412,7 @@ export default function Landing() {
                 can see how the number is reached. */}
             <Stagger whileInView className="mt-10 space-y-px overflow-hidden rounded-2xl border border-line" gap={0.12}>
               {[
-                ['Base rate', 'The station owner sets their own hourly price.'],
+                ['Base rate', 'The station owner sets their base per-unit (kWh) price.'],
                 ['Demand check', 'We weigh how busy that slot and station are.'],
                 ['Your price', 'The live rate is shown with the reason, before you pay.'],
               ].map(([k, v], i) => (

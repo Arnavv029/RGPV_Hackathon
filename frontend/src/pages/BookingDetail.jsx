@@ -97,10 +97,50 @@ export default function BookingDetail() {
             <p className="mt-4 text-sm text-neutral-300">{STATUS_COPY[b.status]}</p>
 
             <div className="mt-7 grid grid-cols-2 gap-4 sm:grid-cols-4">
-              <Meta icon={CalendarDays} label="Date" value={dateShort(b.slot?.date)} />
-              <Meta icon={Clock} label="Time" value={`${time12(b.slot?.start_time)} – ${time12(b.slot?.end_time)}`} />
+              <Meta icon={CalendarDays} label="Date" value={dateShort(b.booking_date || b.slot?.date)} />
+              <Meta icon={Clock} label="Time" value={`${time12(b.start_time || b.slot?.start_time)} – ${time12(b.end_time || b.slot?.end_time)}`} />
               <Meta icon={CarFront} label="Vehicle" value={b.vehicle_number || b.vehicle_type || '—'} />
-              <Meta icon={CreditCard} label="Paid" value={inr(b.amount_paid, { decimals: 2 })} />
+              <Meta icon={CreditCard} label="Total Paid" value={inr(b.amount_paid, { decimals: 2 })} />
+            </div>
+
+            {/* Payment & Charging Specs Notice */}
+            <div className="mt-6 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 p-4 space-y-2.5 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-bold uppercase tracking-wider text-emerald-300">
+                  ✓ 100% Online Payment Confirmed
+                </span>
+                <span className="rounded-full bg-emerald-500/20 px-2.5 py-0.5 font-bold text-emerald-300">
+                  Amount Paid: {inr(b.amount_paid, { decimals: 2 })}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-neutral-300 border-t border-emerald-400/20 pt-2">
+                <div>
+                  <span className="text-neutral-500">Amount Paid: </span>
+                  <span className="font-semibold text-bone">{inr(b.amount_paid, { decimals: 2 })}</span>
+                </div>
+                <div>
+                  <span className="text-neutral-500">Total Cost: </span>
+                  <span className="font-semibold text-bone">{inr(b.total_estimated_cost || b.amount_paid, { decimals: 2 })}</span>
+                </div>
+                {b.energy_required_kwh && (
+                  <div>
+                    <span className="text-neutral-500">Energy Needed: </span>
+                    <span className="font-semibold text-emerald-400">+{b.energy_required_kwh} kWh</span>
+                  </div>
+                )}
+                {b.current_soc != null && b.target_soc != null && (
+                  <div>
+                    <span className="text-neutral-500">Target SOC: </span>
+                    <span className="font-semibold text-bone">{b.current_soc}% → {b.target_soc}%</span>
+                  </div>
+                )}
+                {b.charging_power_kw && (
+                  <div>
+                    <span className="text-neutral-500">Charger Power: </span>
+                    <span className="font-semibold text-bone">{b.charging_power_kw} kW</span>
+                  </div>
+                )}
+              </div>
             </div>
 
             {Number(b.refund_amount) > 0 && (
