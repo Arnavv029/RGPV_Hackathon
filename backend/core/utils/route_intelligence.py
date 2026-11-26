@@ -396,8 +396,8 @@ def find_stations_along_route(waypoints, total_route_km):
         # For highway trips, filter out city stations before the highway starts
         # (e.g. driver doesn't stop at an origin city mall before even leaving the city)
         if is_highway_trip:
-            # Must be ahead along the travel highway (>= 8 km from start) and within route destination scope
-            if best_along_dist < 8.0 or best_along_dist > (route_len + 10.0):
+            # Must be ahead along the travel highway outside city limits (>= 14 km from start) and within route scope
+            if best_along_dist < 14.0 or best_along_dist > (route_len + 10.0):
                 continue
             if min_perp_dist > max_corridor_km:
                 continue
