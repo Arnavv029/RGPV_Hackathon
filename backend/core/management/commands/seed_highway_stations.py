@@ -236,6 +236,37 @@ class Command(BaseCommand):
 
     @transaction.atomic
     def handle(self, *args, **options):
+        # 0. Ensure demo accounts exist and have active credentials (password: password123)
+        user1, _ = User.objects.get_or_create(
+            username='user1',
+            defaults={
+                'email': 'user1@evapp.com',
+                'role': 'user',
+                'phone': '9876543210',
+                'first_name': 'Ramesh',
+                'last_name': 'Kumar',
+            }
+        )
+        user1.set_password('password123')
+        user1.is_active = True
+        user1.role = 'user'
+        user1.save()
+
+        owner1, _ = User.objects.get_or_create(
+            username='owner1',
+            defaults={
+                'email': 'owner1@evapp.com',
+                'role': 'owner',
+                'phone': '9123456789',
+                'first_name': 'Suresh',
+                'last_name': 'Sharma',
+            }
+        )
+        owner1.set_password('password123')
+        owner1.is_active = True
+        owner1.role = 'owner'
+        owner1.save()
+
         # 1. Purge unwanted dummy stations by exact name or matching dummy patterns
         deleted_count, _ = Station.objects.filter(name__in=PURGE_STATION_NAMES).delete()
         berasia_del, _ = Station.objects.filter(name__icontains='Berasia').delete()

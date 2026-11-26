@@ -181,13 +181,14 @@ def login_view(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    # Try to resolve email → username (Django's authenticate uses username)
-    username = identifier
-    if '@' in identifier:
-        user_obj = User.objects.filter(email__iexact=identifier).order_by('id').first()
-        if user_obj:
-            username = user_obj.username
+    # Resolve identifier (email, username, or phone) case-insensitively
+    user_obj = (
+        User.objects.filter(email__iexact=identifier).order_by('id').first() or
+        User.objects.filter(username__iexact=identifier).order_by('id').first() or
+        User.objects.filter(phone=identifier).order_by('id').first()
+    )
 
+    username = user_obj.username if user_obj else identifier
     user = authenticate(username=username, password=password)
 
     if user is None:
